@@ -102,7 +102,7 @@ async def main() -> None:
         reply = await agent.reply(UserMsg(name="user", content=question))
         print(f"<<< Buddy：{reply.get_text_content()}\n")
 
-    # 退出上下文后，文件仍然在磁盘上——工作区是持久化的
+    # 退出 async with 会调用框架的 LocalWorkspace.close()：只关闭 MCP 连接，不删除工作区文件
     print("=" * 70)
     print(f"工作区当前结构（{WORKDIR}）：")
     print(tree(WORKDIR))

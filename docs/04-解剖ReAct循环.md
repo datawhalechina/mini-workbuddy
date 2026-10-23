@@ -190,11 +190,11 @@ async for event in agent.reply_stream(UserMsg(name="user", content=question)):
 
 看这张时间线，能读出三件事：
 
-**第一，模型调用是瓶颈。**两次调用占了三秒里的绝大部分，工具执行只花了 6 毫秒。这解释了为什么第 8 章的上下文压缩那么重要——省 token 就是省钱，省钱就是省时间。
+**第一，模型调用是瓶颈。** 两次调用（MODEL_CALL_START）占了三秒里的绝大部分，工具执行（TOOL_CALL_START）只花了 6 毫秒。这解释了为什么第 8 章的上下文压缩那么重要——省 token 就是省钱，省钱就是省时间。
 
-**第二，工具是并发的。**两个 `TOOL_CALL_START` 连着出现，没有等彼此。这就是 4.2 节说的"并发执行"。
+**第二，工具是并发的。** 两个 `TOOL_CALL_START` 连着出现，没有等彼此。这就是 4.2 节说的"并发执行"。
 
-**第三，`REPLY_END` 的 `finished_reason` 是 `completed`。**如果它变成 `exceed_max_iters`，说明模型转晕了；变成 `error`，说明某一步炸了。**前端要按这个字段给用户不同的说法。**
+**第三，`REPLY_END` 的 `finished_reason` 是 `completed`。** 如果它变成 `exceed_max_iters`，说明模型转晕了；变成 `error`，说明某一步炸了。**前端要按这个字段给用户不同的说法。**
 
 这个打印器的价值在于：它是第 12 章前端的原型。前端做的事，就是把这张时间线画成界面——把 `MODEL_CALL_START` 变成"正在输入"，把 `TOOL_CALL_START` 变成一张卡片，把 `TEXT_BLOCK_DELTA` 变成逐字打印。
 
@@ -205,18 +205,12 @@ from agentscope.agent import ReActConfig
 
 react_config=ReActConfig(
     max_iters=10,              # 最多转 10 轮
-    stop_on_reject=False,      # 工具被拒绝时不终止
-    structured_output_grace_iters=5,
+    stop_on_reject=False,      # 工具调用被拒绝时，是否立刻终止回复
+    structured_output_grace_iters=5,   # 结构化输出失败时，额外给几次机会
 )
 ```
 
-| 参数 | 默认值 | 作用 |
-|---|---|---|
-| `max_iters` | 50 | 最多多少轮推理-行动迭代 |
-| `structured_output_grace_iters` | 5 | 结构化输出失败时，额外给几次机会 |
-| `stop_on_reject` | `False` | 工具调用被拒绝时，是否立刻终止回复 |
-
-`max_iters` 默认 50，这个值比大多数人的直觉大得多。为什么？因为复杂任务确实需要转很多圈：读十个文件、改五处代码、跑三次测试，五十轮并不夸张。
+ReActConfig方法中`max_iters` 默认值是 50，这个值比大多数人的直觉大得多。为什么？因为复杂任务确实需要转很多圈：读十个文件、改五处代码、跑三次测试，五十轮并不夸张。
 
 但它也是一个成本开关。**每一次循环都是一次 API 调用**，50 轮意味着最坏情况下 50 次请求。所以示例里把它压到 10——不是因为它不够用，而是因为你要先知道自己在花多少钱。
 

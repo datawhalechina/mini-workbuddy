@@ -27,6 +27,9 @@ import pathlib
 import sys
 import uuid
 
+if hasattr(sys.stdout, "reconfigure"):
+    sys.stdout.reconfigure(encoding="utf-8")
+
 HERE = pathlib.Path(__file__).resolve().parent
 sys.path.insert(0, str(HERE.parent / "ch13"))     # 应用装配
 sys.path.insert(0, str(HERE.parent / "ch11"))     # 运行时

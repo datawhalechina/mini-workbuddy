@@ -69,9 +69,10 @@ class JsonStateStore:
         with open(path, encoding="utf-8") as f:
             state = AgentState.model_validate_json(f.read())
 
-        # 恢复时必须清掉的两样东西，理由见 9.3
+        # 恢复时必须清掉的三样东西，理由见 9.3
         state.reply_context.structured_schema = None
         state.reply_context.structured_output = None
+        state.reply_context.cur_iter = 0
         return state
 
     def list_sessions(self, user_id: str, agent_id: str) -> list[dict[str, Any]]:

@@ -43,7 +43,7 @@ FORWARD = {
 
 
 def sse_frame(seq: int, event_type: str, data: dict[str, Any]) -> str:
-    """一帧 SSE。id 用递增序号，浏览器会在重连时自动带上 Last-Event-ID。"""
+    """一帧 SSE。id 用递增序号；原生 EventSource 会带 Last-Event-ID，本项目前端用查询参数续传。"""
     payload = json.dumps(data, ensure_ascii=False, default=str)
     return f"id: {seq}\nevent: {event_type}\ndata: {payload}\n\n"
 

@@ -8,8 +8,12 @@
 
 import asyncio
 import os
+import sys
 
 from dotenv import load_dotenv
+
+if hasattr(sys.stdout, "reconfigure"):
+    sys.stdout.reconfigure(encoding="utf-8")
 
 from agentscope.agent import Agent
 from agentscope.credential import OpenAICredential

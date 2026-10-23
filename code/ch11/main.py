@@ -4,7 +4,7 @@
     python main.py
     # 或者 uvicorn main:app --port 8848 --reload
 
-四个接口：
+五个接口：
     POST /api/sessions            新建会话
     GET  /api/sessions            会话列表
     POST /api/chat                发起一轮回复（立刻返回，不等结果）
