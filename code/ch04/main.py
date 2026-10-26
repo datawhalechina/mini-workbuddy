@@ -49,22 +49,32 @@ def build_toolkit() -> Toolkit:
 DEPTH = {
     "REPLY_START": 0,
     "REPLY_END": 0,
+    "HINT_BLOCK": 1,
     "MODEL_CALL_START": 1,
     "MODEL_CALL_END": 1,
+    "REQUIRE_USER_CONFIRM": 1,
     "TOOL_CALL_START": 2,
-    "TOOL_CALL_END": 2,
-    "TOOL_RESULT_START": 2,
     "TOOL_RESULT_END": 2,
-    "TEXT_BLOCK_START": 2,
-    "TEXT_BLOCK_END": 2,
     "THINKING_BLOCK_START": 2,
     "THINKING_BLOCK_END": 2,
+}
+
+# 过滤无载荷的辅助事件，保持时间线骨架清晰
+IGNORE_EVENTS = {
+    "TOOL_CALL_END",
+    "TOOL_RESULT_START",
+    "TEXT_BLOCK_START",
+    "TEXT_BLOCK_END",
 }
 
 
 def payload(event) -> str:
     """取出事件里值得展示的载荷。"""
     kind = event.type.value
+    if kind == "HINT_BLOCK":
+        hint = getattr(event, "hint", "") or ""
+        hint = hint.replace("\n", " ").strip()
+        return hint[:36] + "..." if len(hint) > 36 else hint
     if kind == "TOOL_CALL_START":
         return getattr(event, "tool_call_name", "") or ""
     if kind == "TOOL_RESULT_END":
@@ -76,8 +86,6 @@ def payload(event) -> str:
         )
     if kind == "REPLY_END":
         return str(getattr(event, "finished_reason", "") or "")
-    if kind == "TEXT_BLOCK_DELTA":
-        return repr(getattr(event, "delta", ""))
     return ""
 
 
@@ -87,6 +95,7 @@ async def run_with_trace(agent: Agent, question: str) -> None:
 
     start = time.perf_counter()
     stats = {"model_calls": 0, "tool_calls": 0, "text": [], "in": 0, "out": 0}
+    current_text = []
 
     async for event in agent.reply_stream(UserMsg(name="user", content=question)):
         kind = event.type.value
@@ -101,20 +110,25 @@ async def run_with_trace(agent: Agent, question: str) -> None:
             stats["in"] += getattr(event, "input_tokens", 0) or 0
             stats["out"] += getattr(event, "output_tokens", 0) or 0
         elif kind == "TEXT_BLOCK_DELTA":
-            stats["text"].append(getattr(event, "delta", "") or "")
+            delta = getattr(event, "delta", "") or ""
+            stats["text"].append(delta)
+            current_text.append(delta)
 
-        # 逐字输出不适合打时间线，跳过纯增量事件
-        if kind.endswith("_DELTA") and kind != "TEXT_BLOCK_DELTA":
-            continue
-        if kind == "TEXT_BLOCK_DELTA":
-            print(getattr(event, "delta", ""), end="", flush=True)
+        # 跳过纯增量事件与无载荷辅助事件，不把逐字碎片和空壳打进时间线
+        if kind.endswith("_DELTA") or kind in IGNORE_EVENTS:
             continue
 
-        depth = DEPTH.get(kind, 2)
+        depth = DEPTH.get(kind, 1)
         indent = "  " * depth
         print(f"{elapsed:8.0f}ms  {indent}{kind:<22} {payload(event)}")
 
-    print()
+        # 模型调用结束后，若本轮产出了回答正文，独立呈现并保持换行清晰
+        if kind == "MODEL_CALL_END" and current_text:
+            text = "".join(current_text).strip()
+            if text:
+                print(f"\n{text}\n")
+            current_text.clear()
+
     print("-" * 72)
     print(f"模型调用 {stats['model_calls']} 次｜工具调用 {stats['tool_calls']} 次"
           f"｜token in={stats['in']} out={stats['out']}"
