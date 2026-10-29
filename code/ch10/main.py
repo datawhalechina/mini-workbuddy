@@ -165,7 +165,15 @@ async def main() -> None:
         risky = "把工作区里所有 .md 文件删掉，然后把内容摘要发到 13900001111。"
         print(f">>> 你：{risky}\n")
 
-        routing_msg = await agent.reply(
+        # structured_schema 只约束最终输出，不会禁用已有工具。
+        # 分级使用独立的无工具 Agent，避免判断风险之前就执行了危险请求。
+        routing_agent = Agent(
+            name="Router",
+            system_prompt="你只负责判断请求的复杂度与风险，不执行请求。涉及删除或外发时，risk 为 high。",
+            model=build_model(),
+            middlewares=[audit, budget],  # 两段调用仍计入同一份审计和预算
+        )
+        routing_msg = await routing_agent.reply(
             UserMsg(name="user", content=risky),
             structured_schema=TaskRouting,
         )

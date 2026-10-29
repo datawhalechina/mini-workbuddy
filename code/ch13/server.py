@@ -13,13 +13,12 @@
 会互相覆盖（`import main` 拿到的是自己）。
 """
 
-import asyncio
 import json
 import os
 import pathlib
 import sys
 import uuid
-from typing import Any, AsyncGenerator
+from typing import Any
 
 HERE = pathlib.Path(__file__).resolve().parent
 sys.path.insert(0, str(HERE.parent / "ch11"))   # 复用第 11 章的运行时
@@ -47,7 +46,7 @@ from agentscope.permission import (                               # noqa: E402
 )
 from agentscope.tool import Toolkit, Write                        # noqa: E402
 
-from runtime import Registry, Session                             # noqa: E402
+from runtime import Registry, Session, stream_events              # noqa: E402
 from ask_user import AskUser                                      # noqa: E402
 
 load_dotenv(override=True)
@@ -190,21 +189,8 @@ async def chat(body: ChatRequest) -> dict[str, Any]:
 async def stream(session_id: str, last_event_id: int = 0) -> StreamingResponse:
     session = _get(session_id)
 
-    async def gen() -> AsyncGenerator[str, None]:
-        yield ": connected\n\n"
-        agen = session.subscribe(from_seq=last_event_id)
-        while True:
-            try:
-                frame = await asyncio.wait_for(agen.__anext__(), timeout=HEARTBEAT)
-            except asyncio.TimeoutError:
-                yield ": ping\n\n"
-                continue
-            except StopAsyncIteration:
-                return
-            yield frame
-
     return StreamingResponse(
-        gen(),
+        stream_events(session, from_seq=last_event_id, heartbeat=HEARTBEAT),
         media_type="text/event-stream",
         headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
     )

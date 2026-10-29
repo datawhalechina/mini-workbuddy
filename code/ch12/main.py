@@ -13,6 +13,7 @@
     用浏览器打开 mock.html（?scene=stream / tool / error / task）
 """
 
+import importlib.util
 import pathlib
 import sys
 
@@ -21,7 +22,11 @@ HERE = pathlib.Path(__file__).resolve().parent
 # 把第 11 章的目录放进搜索路径，复用它的 runtime.py 与 main.py
 sys.path.insert(0, str(HERE.parent / "ch11"))
 
-import main as ch11  # noqa: E402  第 11 章的 app / 路由 / 构建函数
+# 按路径加载并使用不同的模块名，避免 uvicorn main:app 导入本章时
+# import main 又拿到尚未初始化完成的自己。
+spec = importlib.util.spec_from_file_location("ch11_app", HERE.parent / "ch11" / "main.py")
+ch11 = importlib.util.module_from_spec(spec)
+spec.loader.exec_module(ch11)
 
 from fastapi.staticfiles import StaticFiles  # noqa: E402
 

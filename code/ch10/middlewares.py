@@ -10,6 +10,7 @@
 import json
 import re
 import time
+from collections.abc import AsyncIterable
 from typing import Any, AsyncGenerator, Awaitable, Callable, Union
 
 from agentscope.middleware import MiddlewareBase
@@ -26,7 +27,7 @@ def tap_usage(response, on_usage):
     所以流式这一支返回一个包装生成器：分片原样往下传，等最后一个分片
     经过时再回调 on_usage。
     """
-    if not hasattr(response, "__aiter__"):
+    if not isinstance(response, AsyncIterable):
         # 非流式（含第 8、9 章的假模型）：直接就是一个 ChatResponse
         on_usage(getattr(response, "usage", None))
         return response

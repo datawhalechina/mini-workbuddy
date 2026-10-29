@@ -185,6 +185,34 @@ class Session:
                 self.subscribers.remove(queue)
 
 
+async def stream_events(
+    session: Session,
+    from_seq: int = 0,
+    heartbeat: float = 15,
+) -> AsyncGenerator[str, None]:
+    """等待事件时定期发心跳；断开连接只清理订阅，不取消后台回复。"""
+    yield ": connected\n\n"
+    agen = session.subscribe(from_seq=from_seq)
+    pending = asyncio.create_task(anext(agen))
+    try:
+        while True:
+            # wait 超时不会取消取帧任务；同一个任务可以跨过多次心跳。
+            done, _ = await asyncio.wait({pending}, timeout=heartbeat)
+            if not done:
+                yield ": ping\n\n"
+                continue
+            try:
+                frame = pending.result()
+            except StopAsyncIteration:
+                return
+            yield frame
+            pending = asyncio.create_task(anext(agen))
+    finally:
+        pending.cancel()
+        await asyncio.gather(pending, return_exceptions=True)
+        await agen.aclose()
+
+
 class Registry:
     """会话注册表。生产环境这里该换成 Redis，接口形状不变。"""
 

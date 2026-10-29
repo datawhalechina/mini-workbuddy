@@ -34,24 +34,27 @@ from telemetry import PRICE_IN, PRICE_OUT, Recorder, UsageLog   # noqa: E402
 
 LOG_PATH = HERE / "logs" / "usage.jsonl"
 usage_log = UsageLog(LOG_PATH)
-recorder = Recorder(usage_log)
 
 
 # ---------------------------------------------------------------------------
 # 一、会记账的会话
 # ---------------------------------------------------------------------------
 class UsageSession(ch13.InteractiveSession):
-    """只覆盖一个方法：每发出一帧，顺手记一笔。
+    """每个会话保存自己的计时状态，每发出一帧，顺手记一笔。
 
     选 `_emit` 而不是中间件，是因为记账要的信息本来就在事件里：
     前端在 MODEL_CALL_END 里看到的 token，和日志里要记的是同一份数据。
     多一个采信来源，就多一处对不上的可能。
     """
 
+    def __init__(self, session_id, agent) -> None:
+        super().__init__(session_id, agent)
+        self.recorder = Recorder(usage_log)
+
     def _emit(self, event_type: str, data: dict[str, Any]) -> None:
         super()._emit(event_type, data)          # 先照常推给前端
         try:
-            recorder.observe(event_type, data, self.session_id)
+            self.recorder.observe(event_type, data, self.session_id)
         except Exception as error:               # noqa: BLE001
             # 记账失败不该把这一轮对话搞挂
             print(f"[telemetry] 记账失败 {event_type}: {error}")

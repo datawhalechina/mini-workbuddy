@@ -10,6 +10,7 @@ const $ = (id) => document.getElementById(id);
 
 const state = {
   sessionId: null,
+  sessionRequest: 0,
   messages: [],       // { id, role, blocks: [], els: {}, timelineEl }
   tasks: [],
   stats: { calls: 0, tools: 0, inTok: 0, outTok: 0, cacheTok: 0, startAt: 0 },
@@ -78,18 +79,24 @@ async function connect() {
   // 收到 done 时后端会关掉这条流，所以每一轮发送之后都要重新连。
   // 用 connecting 去重，避免连续点两次发送时开两条流抢同一批帧。
   if (state.connecting) return;
+  const controller = new AbortController();
+  const sessionId = state.sessionId;
+  state.abort = controller;
   state.connecting = true;
   setConn("busy", "连接中");
 
   try {
-    while (true) {
+    while (!controller.signal.aborted) {
       try {
         await readStream(
-          `/api/stream/${state.sessionId}?last_event_id=${state.lastEventId}`,
+          `/api/stream/${sessionId}?last_event_id=${state.lastEventId}`,
           {
-            signal: state.abort?.signal,
-            onOpen: () => setConn("ok", "已连接"),
+            signal: controller.signal,
+            onOpen: () => {
+              if (state.abort === controller) setConn("ok", "已连接");
+            },
             onFrame: (frame) => {
+              if (state.abort !== controller || controller.signal.aborted) return;
               if (frame.id) state.lastEventId = frame.id;
               // 注意：不要在这里因为 done 就中断读取。
               // 回放历史帧时，缓冲区里会有多个 done（每轮一个），
@@ -101,15 +108,19 @@ async function connect() {
         );
         break;                                   // 正常结束
       } catch (err) {
-        if (err.name === "AbortError") break;
+        if (controller.signal.aborted || err.name === "AbortError") break;
         setConn("off", "连接断开，3 秒后重连");
         await new Promise((r) => setTimeout(r, 3000));
       }
     }
   } finally {
-    state.connecting = false;
+    // 切换会话后，旧连接的收尾不能覆盖新连接的状态。
+    if (state.abort === controller) {
+      state.connecting = false;
+      state.abort = null;
+      setConn("off", "本轮结束");
+    }
   }
-  setConn("off", "本轮结束");
 }
 
 /* ------------------------------------------------------------------ */
@@ -518,7 +529,10 @@ async function send() {
   const text = input.value.trim();
   if (!text) return;
 
-  if (!state.sessionId) await newSession(MOCK ? text.slice(0, 20) : undefined);
+  if (!state.sessionId) {
+    const created = await newSession(MOCK ? text.slice(0, 20) : undefined);
+    if (!created) return;   // 等待创建期间切换了会话，旧问题不应发到新会话。
+  }
 
   if (state.streaming) {
     setStatus("上一条还没结束");
@@ -581,23 +595,62 @@ $("btn-stop").onclick = async () => {
 /* 六、会话与右栏                                                      */
 /* ------------------------------------------------------------------ */
 
-async function newSession(title) {
-  if (MOCK) {
-    state.sessionId = "mock-0001";
-    $("session-title").textContent = title || "演示会话";
-    renderSessions([{ id: "mock-0001", title: title || "演示会话", messages: 0 }]);
-    setConn("ok", "演示模式");
-    return;
+$("btn-new").onclick = async () => {
+  $("btn-new").disabled = true;
+  try {
+    await newSession();
+  } catch (err) {
+    setStatus(`新建会话失败：${err.message}`);
+  } finally {
+    $("btn-new").disabled = false;
   }
-  const res = await fetch("/api/sessions", { method: "POST" });
-  const data = await res.json();
-  state.sessionId = data.session_id;
+};
+
+async function newSession(title) {
+  const request = ++state.sessionRequest;
+  let sessionId = "mock-0001";
+  if (!MOCK) {
+    const res = await fetch("/api/sessions", { method: "POST" });
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    const data = await res.json();
+    sessionId = data.session_id;
+  }
+  // 启动请求可能晚于用户点击“新建”的请求返回，只接纳最新一次。
+  if (request !== state.sessionRequest) return false;
+  // 新会话创建成功后再离开旧会话；只断开订阅，后台任务继续运行。
+  state.abort?.abort();
+  state.abort = null;
+  state.connecting = false;
+  state.sessionId = sessionId;
   state.lastEventId = 0;
   state.messages = [];
+  state.streaming = false;
+  state.stick = true;
+  state.stats = { calls: 0, tools: 0, inTok: 0, outTok: 0, startAt: 0 };
+  state.interrupted = false;
+  pending = null;
+  closeConfirm();
+  messagesEl().querySelectorAll(".msg").forEach((el) => el.remove());
   renderMessages();
+  renderTasks([]);
+  renderStats();
+  renderUsage({}, []);
+  $("log").textContent = "";
+  input.value = "";
+  input.style.height = "auto";
+  setStatus("");
+  unlockInput();
+  if (MOCK) {
+    $("session-title").textContent = title || "演示会话";
+    renderSessions([{ id: sessionId, title: title || "演示会话", messages: 0 }]);
+    setConn("ok", "演示模式");
+    return true;
+  }
   $("session-title").textContent = "新会话";
   await refreshSessions();
+  if (request !== state.sessionRequest) return false;
   connect();
+  return true;
 }
 
 async function refreshSessions() {
@@ -647,11 +700,13 @@ function renderTasks(tasks) {
 
 async function refreshUsage() {
   if (MOCK || !state.sessionId) return;
+  const sessionId = state.sessionId;
   try {
     const [sum, log] = await Promise.all([
-      fetch(`/api/usage?session_id=${state.sessionId}`).then((r) => r.json()),
-      fetch(`/api/usage/log?session_id=${state.sessionId}&limit=8`).then((r) => r.json()),
+      fetch(`/api/usage?session_id=${sessionId}`).then((r) => r.json()),
+      fetch(`/api/usage/log?session_id=${sessionId}&limit=8`).then((r) => r.json()),
     ]);
+    if (state.sessionId !== sessionId) return;
     renderUsage(sum, log.items || []);
   } catch {
     /* 记账失败不该影响聊天 */

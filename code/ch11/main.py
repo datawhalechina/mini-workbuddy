@@ -12,10 +12,9 @@
     POST /api/confirm             回复一次确认请求
 """
 
-import asyncio
 import json
 import os
-from typing import Any, AsyncGenerator
+from typing import Any
 
 from dotenv import load_dotenv
 from fastapi import FastAPI, HTTPException
@@ -29,7 +28,7 @@ from agentscope.model import OpenAIChatModel
 from agentscope.permission import PermissionMode
 from agentscope.tool import Toolkit, Write
 
-from runtime import Registry, Session
+from runtime import Registry, Session, stream_events
 
 load_dotenv(override=True)
 
@@ -143,24 +142,8 @@ async def chat(body: ChatRequest) -> dict[str, Any]:
 async def stream(session_id: str, last_event_id: int = 0) -> StreamingResponse:
     session = _get(session_id)
 
-    async def gen() -> AsyncGenerator[str, None]:
-        # 先发一个注释帧，让浏览器立刻建立连接
-        yield ": connected\n\n"
-
-        agen = session.subscribe(from_seq=last_event_id)
-        while True:
-            try:
-                frame = await asyncio.wait_for(agen.__anext__(), timeout=HEARTBEAT)
-            except asyncio.TimeoutError:
-                # 心跳：中间有代理或负载均衡时，长时间无数据会被掐断
-                yield ": ping\n\n"
-                continue
-            except StopAsyncIteration:
-                return
-            yield frame
-
     return StreamingResponse(
-        gen(),
+        stream_events(session, from_seq=last_event_id, heartbeat=HEARTBEAT),
         media_type="text/event-stream",
         headers={
             "Cache-Control": "no-cache",
