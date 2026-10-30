@@ -49,7 +49,7 @@
 | [第 1 章 我们究竟要造什么](./docs/01-我们究竟要造什么.md) | Agent = 模型 + 循环 + 工具；环境搭建；跑通第一条消息 | `ch01` | ✅ |
 | [第 2 章 读懂一次对话](./docs/02-读懂一次对话.md) | Msg / Block / Event；`reply` 与 `reply_stream` | `ch02` | ✅ |
 | <strong>第 1 篇 · 从会说话到会干活</strong> | | | |
-| [第 3 章 给它一双手](./docs/03-给它一双手.md) | 工具调用、Toolkit、JSON Schema 从哪来 | `ch03` | 🔄 |
+| [第 3 章 给它一双手](./docs/03-给它一双手.md) | 工具调用、Toolkit、JSON Schema 从哪来 | `ch03` | ✅ |
 | [第 4 章 解剖 ReAct 循环](./docs/04-解剖ReAct循环.md) | 裸循环与框架循环的对比；事件全景；迭代上限 | `ch04` | 🔄 |
 | [第 5 章 装进一个工作区](./docs/05-装进一个工作区.md) | `LocalWorkspace`；路径边界；先读后写 | `ch05` | 🔄 |
 | [第 6 章 工具不够用就自己造](./docs/06-工具不够用就自己造.md) | `ToolBase` 四件套；工具组与元工具 | `ch06` | 🔄 |

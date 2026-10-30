@@ -10,6 +10,7 @@ import asyncio
 import os
 import sys
 from datetime import datetime
+from pathlib import Path
 
 from dotenv import load_dotenv
 
@@ -92,6 +93,10 @@ async def print_tool_schemas(toolkit: Toolkit) -> None:
 
 
 async def main() -> None:
+    # 把工作目录切到本章脚本所在目录，这样模型写出的 fizz.py 会落在 code/ch03/，
+    # 后面 `python fizz.py` 也能直接找到它。
+    os.chdir(Path(__file__).resolve().parent)
+
     toolkit = build_toolkit()
     await print_tool_schemas(toolkit)
 
