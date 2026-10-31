@@ -1,6 +1,8 @@
-"""第 4 章。
+"""第 4 章（上半）：不用框架，手写一遍 ReAct 循环。
 
-这个文件的唯一目的是让你看清循环的本质。
+这个文件的唯一目的，是让你看清循环的本质：
+模型要工具 → 你替它执行 → 结果回填 → 再问一遍，直到它不再要工具。
+
 写完之后再看 main.py，你就知道框架到底替你做了什么。
 
 注意：这里直接用 openai SDK，没有 import agentscope。
@@ -109,11 +111,19 @@ async def bare_loop(question: str, max_iters: int = 5) -> str:
         # 逐个执行，把结果作为 tool 消息追加
         for tc in choice.tool_calls:
             name = tc.function.name
-            args = json.loads(tc.function.arguments or "{}")
-            print(f"           → 调用 {name}({args})")
             try:
+                # 模型偶尔会编出一个不存在的工具名，先查表再调用，
+                # 免得它变成一句 "KeyError: 'xxx'" 甩给用户
+                if name not in REGISTRY:
+                    raise LookupError(
+                        f"没有名为 {name} 的工具。可用工具：{', '.join(REGISTRY)}",
+                    )
+                # 解析参数也放在 try 里：模型可能吐出不合法的 JSON，
+                # 那同样属于"工具执行失败"，不该把整个程序带崩
+                args = json.loads(tc.function.arguments or "{}")
+                print(f"           → 调用 {name}({args})")
                 result = REGISTRY[name](**args)
-            except Exception as exc:  # 工具炸了不能把整个程序带崩
+            except Exception as exc:  # 解析失败、工具炸了，都只影响这一条结果
                 result = f"工具执行失败：{exc}"
             messages.append(
                 {
@@ -124,7 +134,12 @@ async def bare_loop(question: str, max_iters: int = 5) -> str:
             )
         # 回到循环开头，再问一次模型
 
-    return "（达到最大轮数，循环终止）"
+    # 撞上限不是"得到答案"，但也不该给用户一片空白：
+    # 说清楚是哪个闸门拦下的，以及下一步能怎么办
+    return (
+        f"（循环转满 {max_iters} 轮仍未收敛，任务没有完成。"
+        f"可以把 max_iters 调大后重试）"
+    )
 
 
 async def main() -> None:
