@@ -16,18 +16,10 @@ from dotenv import load_dotenv
 
 from agentscope.agent import Agent
 from agentscope.credential import OpenAICredential
-from agentscope.message import TextBlock, ToolResultState, UserMsg
+from agentscope.message import UserMsg
 from agentscope.model import OpenAIChatModel
 from agentscope.permission import PermissionMode
-from agentscope.tool import (
-    Bash,
-    FunctionTool,
-    Read,
-    Toolkit,
-    ToolChunk,
-    ToolMiddlewareBase,
-    Write,
-)
+from agentscope.tool import Bash, FunctionTool, Read, Toolkit, Write
 
 load_dotenv(override=True)
 
@@ -72,67 +64,15 @@ def count_text(text: str) -> str:
     return f"总字符数 {len(text)}，其中中文 {chinese} 个字，共 {lines} 行。"
 
 
-# ---------------------------------------------------------------------------
-# 工作区边界：给工具一个"只能待在这里"的范围
-#
-# 别指望提示词。Read / Write 只收绝对路径，模型拼出来的绝对路径从哪来？它
-# 只知道"这台机器上有什么"，不知道"我该待在哪"——这个维度它压根没有。
-# 框架自己的工具描述甚至写着"You can access any file directly"。
-#
-# 所以边界只能在代码里夹一层：路径先收敛，越界就拒。
-# ---------------------------------------------------------------------------
-
-WORKDIR = Path(__file__).resolve().parent
-
-
-def safe_path(path: str) -> Path:
-    """把模型给的路径收敛到 WORKDIR 内部，越界抛异常。
-
-    expanduser 先展开 ~；resolve 再展开 .. 和软链接。
-    注意 path 是绝对路径时，`WORKDIR / path` 的结果直接就是 path——
-    所以下面那次 is_relative_to 校验不是多余，是唯一的拦网点。
-    """
-    target = (WORKDIR / Path(path).expanduser()).resolve()
-    if not target.is_relative_to(WORKDIR):
-        raise PermissionError(f"{path} 不在工作区内（{WORKDIR}）")
-    return target
-
-
-class WorkspaceGuard(ToolMiddlewareBase):
-    """拦在工具前面：参数里带路径的，先收敛再执行。
-
-    只管得住读写这类"给我一个路径"的工具。Bash 收到的是一个字符串，
-    `cd / && rm -rf ~` 一句话就出去了，这一层拦不住——那种只能换执行环境
-    （容器 / bubblewrap），第 7 章讲。
-    """
-
-    async def on_tool_call(self, tool, input_kwargs, next_handler):
-        for key in ("file_path", "path"):
-            value = input_kwargs.get(key)
-            if isinstance(value, str):
-                try:
-                    input_kwargs[key] = str(safe_path(value))
-                except PermissionError as exc:
-                    # 拒绝也要变成一条正常结果回给模型，别让它以为工具炸了
-                    yield ToolChunk(
-                        content=[TextBlock(text=f"Error: {exc}")],
-                        state=ToolResultState.ERROR,
-                        is_last=True,
-                    )
-                    return
-        async for chunk in next_handler(**input_kwargs):
-            yield chunk
-
-
 def build_toolkit() -> Toolkit:
     """把工具装配成一个 Toolkit。"""
     return Toolkit(
         tools=[
             FunctionTool(get_current_time),
             FunctionTool(count_text),
-            Read(middlewares=[WorkspaceGuard()]),   # 读文件
-            Write(middlewares=[WorkspaceGuard()]),  # 写文件
-            Bash(),  # 执行 shell 命令（这一层管不住，见上面的类注释）
+            Read(),  # 读文件
+            Write(),  # 写文件
+            Bash(),  # 执行 shell 命令
         ],
     )
 
@@ -153,10 +93,9 @@ async def print_tool_schemas(toolkit: Toolkit) -> None:
 
 
 async def main() -> None:
-    # 把进程工作目录切到本章脚本所在目录，这样 `python fizz.py` 找得到文件。
-    # 注意 chdir 只改了 Bash 的相对路径起点，它拦不住 Read/Write 的绝对路径——
-    # 真正的边界是上面那个 WorkspaceGuard。
-    os.chdir(WORKDIR)
+    # 把工作目录切到本章脚本所在目录，这样模型写出的 fizz.py 会落在 code/ch03/，
+    # 后面 `python fizz.py` 也能直接找到它。
+    os.chdir(Path(__file__).resolve().parent)
 
     toolkit = build_toolkit()
     await print_tool_schemas(toolkit)
@@ -166,9 +105,6 @@ async def main() -> None:
         system_prompt=(
             "你叫 Buddy，是一个住在命令行里的工作助手。"
             "需要用工具获取信息时必须调用工具，不要凭记忆猜测。短答即可。"
-            # 提示词只负责"告诉它家在哪儿"，强制由 WorkspaceGuard 完成。
-            # 只告知不强制，它照样可能越界；只强制不告知，它只会一遍遍撞墙。
-            f"你的工作区是 {WORKDIR}，所有文件操作都只能在这个目录里。"
         ),
         model=build_model(),
         toolkit=toolkit,
