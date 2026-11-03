@@ -1,7 +1,7 @@
 """第 5 章：给 Agent 一个工作区。
 
 比上一章多了什么：
-  1. LocalWorkspace：限定它能碰哪个目录
+  1. LocalWorkspace：给工具一个起点，并统一提供它们
   2. 工具不再是手写的，而是工作区根据平台自动提供
   3. offloader：把上下文卸载到工作区
 """
@@ -64,7 +64,7 @@ def tree(path: str) -> str:
 async def main() -> None:
     prepare_files()
 
-    # workspace 是异步上下文管理器：进入时初始化，退出时清理
+    # workspace 是异步上下文管理器：进入时初始化目录，退出时只关连接
     async with LocalWorkspace(workdir=WORKDIR) as workspace:
         tools = await workspace.list_tools()
         print("=" * 70)
