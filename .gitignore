@@ -26,3 +26,6 @@ Thumbs.db
 
 # 工作区元数据
 .workbuddy/
+
+# 本地运行 ch05 演示产生的工作区
+/sandbox/
