@@ -23,7 +23,7 @@ import json
 import os
 import time
 from pathlib import Path
-from typing import Any
+from typing import Any, Iterator
 
 # 单价：元 / 百万 token。不同模型差很多，走环境变量，别写死。
 PRICE_IN = float(os.getenv("PRICE_IN", "2.0"))
@@ -73,28 +73,72 @@ class UsageLog:
                 continue          # 写到一半断电会留下半行，跳过即可
         return rows
 
+    def iter_rows(self) -> Iterator[dict[str, Any]]:
+        """逐行流式读，不把整份日志读进内存。
+
+        `read(limit)` 的窗口是给"看最近 N 条"用的；汇总要走这里 ——
+        走 read() 就会把历史账目截断（见下面 summary 的注释）。
+        """
+        if not self.path.exists():
+            return
+        with self.path.open("r", encoding="utf-8") as fp:
+            for line in fp:
+                line = line.strip()
+                if not line:
+                    continue
+                try:
+                    yield json.loads(line)
+                except json.JSONDecodeError:
+                    continue          # 写到一半断电会留下半行，跳过即可
+
     def summary(self, session_id: str | None = None) -> dict[str, Any]:
-        """按会话汇总。不传 session_id 就是全局。"""
-        rows = [
-            r for r in self.read()
-            if session_id is None or r.get("session_id") == session_id
-        ]
-        models = [r for r in rows if r.get("kind") == "model_call"]
-        tools = [r for r in rows if r.get("kind") == "tool"]
+        """按会话汇总。不传 session_id 就是全局。
+
+        这里**不能**用 `self.read()`：它的默认窗口是最近 500 行，于是账目
+        从一开始就最多只数 500 条，两个会话交替时先记的那个会整段归零。
+        改成流式全量聚合——读多少算多少，内存不随日志增长。
+        """
+        model_calls = 0
+        tool_calls = 0
+        input_tokens = 0
+        output_tokens = 0
+        cached_tokens = 0
+        elapsed_ms = 0
+        cost = 0.0
+        slowest: dict[str, Any] | None = None
+        failed_tools: list[dict[str, Any]] = []
+
+        for r in self.iter_rows():
+            if session_id is not None and r.get("session_id") != session_id:
+                continue
+            kind = r.get("kind")
+            if kind == "model_call":
+                model_calls += 1
+                input_tokens += r.get("input_tokens", 0)
+                output_tokens += r.get("output_tokens", 0)
+                cached_tokens += r.get("cached_tokens", 0)
+                cost += r.get("cost", 0.0)
+                ms = r.get("elapsed_ms", 0)
+                elapsed_ms += ms
+                if slowest is None or ms > slowest.get("elapsed_ms", 0):
+                    slowest = r
+            elif kind == "tool":
+                tool_calls += 1
+                if r.get("state") == "error":
+                    failed_tools.append(
+                        {"tool": r.get("tool"), "state": r.get("state")}
+                    )
 
         return {
-            "model_calls": len(models),
-            "tool_calls": len(tools),
-            "input_tokens": sum(r.get("input_tokens", 0) for r in models),
-            "output_tokens": sum(r.get("output_tokens", 0) for r in models),
-            "cached_tokens": sum(r.get("cached_tokens", 0) for r in models),
-            "cost": round(sum(r.get("cost", 0.0) for r in models), 6),
-            "elapsed_ms": sum(r.get("elapsed_ms", 0) for r in models),
-            "slowest": max(models, key=lambda r: r.get("elapsed_ms", 0), default=None),
-            "failed_tools": [
-                {"tool": r.get("tool"), "state": r.get("state")}
-                for r in tools if r.get("state") == "error"
-            ],
+            "model_calls": model_calls,
+            "tool_calls": tool_calls,
+            "input_tokens": input_tokens,
+            "output_tokens": output_tokens,
+            "cached_tokens": cached_tokens,
+            "cost": round(cost, 6),
+            "elapsed_ms": elapsed_ms,
+            "slowest": slowest,
+            "failed_tools": failed_tools,
         }
 
 
