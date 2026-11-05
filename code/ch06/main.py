@@ -8,7 +8,6 @@
 
 import asyncio
 import os
-import time
 from typing import AsyncGenerator
 
 from dotenv import load_dotenv
@@ -19,6 +18,7 @@ from agentscope.credential import OpenAICredential
 from agentscope.message import TextBlock, UserMsg
 from agentscope.model import OpenAIChatModel
 from agentscope.permission import PermissionBehavior, PermissionDecision
+from agentscope.state import AgentState
 from agentscope.tool import (
     FunctionTool,
     ToolBase,
@@ -84,8 +84,12 @@ class ReportBuilder(ToolBase):
         self.is_read_only = True
         self.is_concurrency_safe = True
 
-    async def check_permissions(self, **_kwargs) -> PermissionDecision:
-        """只读工具，不需要用户确认。"""
+    async def check_permissions(self, *_args, **_kwargs) -> PermissionDecision:
+        """只读工具，不需要用户确认。
+
+        框架会按位置传进 tool_input 和 context 两个参数，
+        这里先用 *_args 全收下。
+        """
         return PermissionDecision(
             behavior=PermissionBehavior.ALLOW,
             message="build_report 是只读工具，自动放行。",
@@ -143,7 +147,7 @@ def word_frequency(text: str, top_n: int = 5) -> str:
 
 
 # ---------------------------------------------------------------------------
-# 四、装配：分两个工具组
+# 四、装配：常驻工具和按需工具分开
 # ---------------------------------------------------------------------------
 
 
@@ -161,6 +165,30 @@ def build_toolkit() -> Toolkit:
             ),
         ],
     )
+
+
+# ---------------------------------------------------------------------------
+# 五、回放这一轮的工具调用，让读者看见模型干了什么
+# ---------------------------------------------------------------------------
+
+
+def block_text(block) -> str:
+    """把工具返回的内容块压成一行文本。"""
+    if isinstance(block, str):
+        return block
+    parts = [getattr(item, "text", "") for item in block or []]
+    return " ".join(p for p in parts if p)
+
+
+def print_trace(state: AgentState) -> None:
+    """按时间顺序打印本轮所有工具调用和返回。"""
+    for msg in state.context:
+        for block in msg.content:
+            if block.type == "tool_call":
+                print(f"  -> {block.name} {block.input}")
+            elif block.type == "tool_result":
+                text = block_text(block.output).replace("\n", " ")
+                print(f"  <- [{block.state}] {text[:100]}")
 
 
 async def main() -> None:
@@ -188,7 +216,13 @@ async def main() -> None:
     question = "帮我搭一份「本周工作」的报告提纲，包含进展、问题、下周计划三部分。"
     print(f">>> 你：{question}\n")
     reply = await agent.reply(UserMsg(name="user", content=question))
-    print(f"<<< Buddy：{reply.get_text_content()}")
+    print(f"<<< Buddy：{reply.get_text_content()}\n")
+
+    print("=" * 70)
+    print("这一轮模型实际做了什么（按时间顺序）")
+    print_trace(agent.state)
+    print("=" * 70)
+    print("最终激活的工具组：", agent.state.tool_context.activated_groups)
 
 
 if __name__ == "__main__":

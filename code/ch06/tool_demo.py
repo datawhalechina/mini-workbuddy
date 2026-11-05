@@ -46,7 +46,8 @@ class ReportBuilder(ToolBase):
         self.is_read_only = True
         self.is_concurrency_safe = True
 
-    async def check_permissions(self, **_kwargs) -> PermissionDecision:
+    async def check_permissions(self, *_args, **_kwargs) -> PermissionDecision:
+        # 框架按位置传 tool_input 和 context，所以 *_args 不能省
         return PermissionDecision(
             behavior=PermissionBehavior.ALLOW,
             message="build_report 是只读工具，自动放行。",
