@@ -39,7 +39,7 @@
 
 ## 📖 内容导航
 
-五篇 15 章，每章 3000–4000 字，读完一章约 20 分钟。
+五篇 15 章，篇幅因章而异，读完一章约 20 分钟。
 
 >  🔄表示内容正在调整，✅表示内容已经完成
 
@@ -87,7 +87,7 @@ mini-workbuddy/
 │   └── .vitepress/            # VitePress 配置与主题
 ├── code/                      # 逐章代码，每章目录独立可跑
 │   ├── .env.example
-│   ├── ch01/main.py           # 第 1–10 章都是单文件，方便 diff
+│   ├── ch01/main.py           # 第 1–10 章入口统一为 main.py，方便 diff
 │   └── …ch15/checkup.py
 ├── .github/workflows/         # 推送 main 自动构建并发布到 GitHub Pages
 └── package.json               # VitePress 依赖与文档站脚本
@@ -129,7 +129,7 @@ npm run docs:build      # 产物在 docs/.vitepress/dist
 
 - 发现错误或表述不清：提 Issue，附上章节号与实际看到的输出。
 - 想补充内容或修正代码：提 Pull Request，一章一个提交，便于逐章审阅。
-- 新增配图请遵循既有视觉规范：浅色底、1200 像素宽、源文件放 `assets/src/`，命名 `<章号>-<主题>`。
+- 新增配图请遵循既有视觉规范：浅色底、位图 2400 px 宽（1200 px 显示宽度的 2x 屏），命名 `<章号>-<主题>`。
 
 ## 📄 许可
 
