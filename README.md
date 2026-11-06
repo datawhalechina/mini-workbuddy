@@ -39,7 +39,7 @@
 
 ## 📖 内容导航
 
-五篇 15 章，约 4.7 万字，读完一章约 20 分钟。
+五篇 15 章，篇幅因章而异，读完一章约 20 分钟。
 
 >  🔄表示内容正在调整，✅表示内容已经完成
 
@@ -87,7 +87,7 @@ mini-workbuddy/
 │   └── .vitepress/            # VitePress 配置与主题
 ├── code/                      # 逐章代码，每章目录独立可跑
 │   ├── .env.example
-│   ├── ch01/main.py           # 每章入口统一为 main.py，方便 diff
+│   ├── ch01/main.py           # 第 1–10 章入口统一为 main.py，方便 diff
 │   └── …ch15/checkup.py
 ├── .github/workflows/         # 推送 main 自动构建并发布到 GitHub Pages
 └── package.json               # VitePress 依赖与文档站脚本
