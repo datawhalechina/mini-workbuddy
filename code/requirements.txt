@@ -1,2 +1,3 @@
-agentscope>=2,<3
+﻿# 锁定到 README / 15.3 声明的开发基线；更高版本才有的能力见 docs/15-毕业设计.md 的版本对照表
+agentscope==2.0.5
 python-dotenv>=1.0.0
