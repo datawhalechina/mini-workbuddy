@@ -1,10 +1,11 @@
 """第 7 章配套实验：权限判定的离线对照表（不需要模型，不需要 key）。
 
-直接调用 PermissionEngine，看同一批工具调用在五种模式下的判定结果。
+直接调用 PermissionEngine，看同一批工具调用在不同模式下的判定结果。
 运行：python probe_modes.py
 """
 
 import asyncio
+import os
 
 from agentscope.permission import (
     PermissionBehavior,
@@ -13,7 +14,7 @@ from agentscope.permission import (
     PermissionMode,
     PermissionRule,
 )
-from agentscope.tool import Bash, Write
+from agentscope.tool import Bash, Read, Write
 
 COMMANDS = [
     "ls -la",
@@ -22,10 +23,55 @@ COMMANDS = [
 ]
 
 
+async def show_three_cases() -> None:
+    """7.1 用。同一套默认设置，三件事三个答案。"""
+    cases = [
+        (
+            "读一下 readme.md",
+            Read(),
+            {"file_path": os.path.abspath("./sandbox/readme.md")},
+        ),
+        (
+            "改一下 notes.md",
+            Write(),
+            {"file_path": os.path.abspath("./sandbox/notes.md"), "content": "hello"},
+        ),
+        (
+            "往 ~/.bashrc 追加一行",
+            Bash(),
+            {"command": "echo hi >> ~/.bashrc"},
+        ),
+    ]
+
+    print("--- 1. 同一套默认设置，三件事三个答案")
+    engine = PermissionEngine(PermissionContext(mode=PermissionMode.DEFAULT))
+    for label, tool, args in cases:
+        decision = await engine.check_permission(tool, args)
+        print(f"  {label} -> {decision.behavior.value}  immune={decision.bypass_immune}")
+
+    # 给 Bash 补一条"全放行"规则，看第三件事会不会变
+    engine.add_rule(
+        PermissionRule(
+            tool_name="Bash",
+            rule_content="",
+            behavior=PermissionBehavior.ALLOW,
+            source="user",
+        ),
+    )
+    decision = await engine.check_permission(Bash(), {"command": "echo hi >> ~/.bashrc"})
+    print("  补一条 Bash 全放行规则，再问第三件")
+    print(
+        f"  往 ~/.bashrc 追加一行 -> {decision.behavior.value}  "
+        f"immune={decision.bypass_immune}   规则没盖住",
+    )
+    print()
+
+
 async def show_mode_table() -> None:
-    """五种模式 × 三类命令。"""
+    """7.2 用。五种模式 × 三类命令。"""
     tool = Bash()
 
+    print("--- 2. 五种模式 × 三类命令")
     header = f"{'mode':<14}{'command':<24}{'decision':<10}{'immune':<9}reason"
     print(header)
     print("-" * 100)
@@ -44,9 +90,10 @@ async def show_mode_table() -> None:
 
 
 async def show_rule_limits() -> None:
-    """两条规则实验：allow 能不能盖住安全拦截。"""
+    """7.6 用。两条规则实验，看 allow 能不能盖住安全拦截。"""
     tool = Bash()
 
+    print("--- 3. 规则能不能盖住安全拦截")
     context = PermissionContext(mode=PermissionMode.DEFAULT)
     engine = PermissionEngine(context)
     engine.add_rule(
@@ -85,8 +132,6 @@ async def show_rule_limits() -> None:
 
 async def show_write_case() -> None:
     """同一个 Write，两种模式两种结果。"""
-    import os
-
     tool = Write()
     target = os.path.abspath("./sandbox/notes.md")
 
@@ -103,6 +148,7 @@ async def show_write_case() -> None:
 
 
 async def main() -> None:
+    await show_three_cases()
     await show_mode_table()
     await show_rule_limits()
 
