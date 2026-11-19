@@ -1,8 +1,7 @@
 """第 10 章：在关键节点插手。
 
-比上一章多了什么：
-  1. 中间件：在模型调用、工具调用、system prompt 三个节点插手，不改 Agent 也不改工具
-  2. 结构化输出：让模型必须返回一份符合 schema 的数据，用于任务分级
+本章的重点是让人插手。模型给出候选方案，用户拍板之后代码才动手。
+中间件是另一类插手，由框架在后台记账、脱敏、控预算。
 """
 
 import asyncio
@@ -41,7 +40,7 @@ WORKDIR = "./sandbox"
 
 
 # ---------------------------------------------------------------------------
-# 第三个中间件：预算控制。超出上限时不再调用模型，直接返回一句提示。
+# 一类插手：框架在后台干活，用户看不见
 # ---------------------------------------------------------------------------
 class BudgetMiddleware(MiddlewareBase):
     """给一次会话设 token 上限。"""
@@ -73,8 +72,6 @@ class BudgetMiddleware(MiddlewareBase):
             self.used += tokens
             self.spent += tokens / 1000 * self.price_per_k
 
-        # 与审计中间件同样的处理：流式响应要等最后一个分片流过才看得到
-        # usage，所以扣费放在包装生成器的收尾处。
         return tap_usage(await next_handler(), charge)
 
     def report(self) -> str:
@@ -85,16 +82,22 @@ class BudgetMiddleware(MiddlewareBase):
 
 
 # ---------------------------------------------------------------------------
-# 结构化输出：任务分级
+# 另一类插手：模型只出方案，拍板权在人手里
 # ---------------------------------------------------------------------------
-class TaskRouting(BaseModel):
-    """对用户请求做分级，决定走哪条处理路径。"""
+class ActionOption(BaseModel):
+    """一个候选方案。"""
 
-    level: str = Field(description="复杂度：simple / normal / complex")
-    needs_tools: bool = Field(description="是否需要调用工具")
-    risk: str = Field(description="风险等级：low / medium / high，涉及删除或外发时为 high")
-    reason: str = Field(description="一句话说明判断依据")
-    steps: list[str] = Field(description="建议的处理步骤，最多四条")
+    label: str = Field(description="方案的短名，一句话以内")
+    detail: str = Field(description="这个方案具体做什么，让用户看得懂后果")
+    risk: str = Field(description="风险等级，低 / 中 / 高")
+
+
+class ActionPlan(BaseModel):
+    """模型给出的待拍板方案。"""
+
+    question: str = Field(description="需要用户拍板的问题")
+    options: list[ActionOption] = Field(description="两到四个候选方案，按推荐程度排序")
+    reason: str = Field(description="为什么这件事要交给用户决定，而不是模型自己定")
 
 
 def build_model() -> OpenAIChatModel:
@@ -127,11 +130,32 @@ async def build_agent(workspace: LocalWorkspace):
         model=build_model(),
         toolkit=Toolkit(tools=tools),
         offloader=workspace,
-        # 顺序即执行顺序：先脱敏，审计看到的就已经是掩码
+        # 顺序即执行顺序，先脱敏，审计看到的就已经是掩码
         middlewares=[redact, audit, budget, stamp],
     )
+    # 业务上的拍板由下面的菜单做，第 7 章那层安全确认在这个 demo 里跳过
     agent.state.permission_context.mode = PermissionMode.BYPASS
     return agent, audit, budget
+
+
+def choose_option(plan: ActionPlan) -> ActionOption | None:
+    """把模型给的选项摆出来，让用户挑一个。"""
+    print(f"\n{plan.question}")
+    print(f"模型的理由：{plan.reason}")
+    for i, opt in enumerate(plan.options, 1):
+        print(f"  [{i}] {opt.label}（风险 {opt.risk}）{opt.detail}")
+    print("  [0] 都不做")
+
+    raw = input("选一个编号 > ").strip()
+    if raw == "0":
+        return None
+    return plan.options[int(raw) - 1]
+
+
+def confirm_execution(option: ActionOption) -> bool:
+    """再问一次，同意才往下走。"""
+    answer = input(f"确认执行「{option.label}」？[y/N] ").strip().lower()
+    return answer == "y"
 
 
 async def main() -> None:
@@ -156,33 +180,32 @@ async def main() -> None:
         print(audit.dump())
         print("预算：", budget.report())
 
-        # ---- 第二段：结构化输出，先分级再动手 ----
+        # ---- 第二段：模型出方案，用户拍板 ----
         print()
         print("=" * 70)
-        print("二、结构化输出：先判断该不该动手")
+        print("二、模型出方案，用户拍板")
         print("=" * 70)
 
-        risky = "把工作区里所有 .md 文件删掉，然后把内容摘要发到 13900001111。"
+        risky = "工作区里文件有点乱，帮我清一清，顺便把摘要发到 13900001111。"
         print(f">>> 你：{risky}\n")
 
-        routing_msg = await agent.reply(
+        plan_msg = await agent.reply(
             UserMsg(name="user", content=risky),
-            structured_schema=TaskRouting,
+            structured_schema=ActionPlan,
         )
+        plan = ActionPlan(**plan_msg.structured_output)
+        option = choose_option(plan)
 
-        routing = TaskRouting(**routing_msg.structured_output)
-        print("分级结果：")
-        print(f"  复杂度：{routing.level}")
-        print(f"  需要工具：{routing.needs_tools}")
-        print(f"  风险：{routing.risk}")
-        print(f"  依据：{routing.reason}")
-        print("  步骤：")
-        for i, step in enumerate(routing.steps, 1):
-            print(f"    {i}. {step}")
-
-        # 这一层判断是代码做的，不是模型做的 —— 高危请求直接拦死
-        if routing.risk == "high":
-            print("\n[拦截] 风险等级 high，不执行，转人工审批。")
+        if option is None:
+            print("\n[停止] 你选了都不做，代码一步没动。")
+        elif not confirm_execution(option):
+            print("\n[停止] 你没同意，代码一步没动。")
+        else:
+            print(f"\n[执行] 按「{option.label}」继续。")
+            followup = await agent.reply(
+                UserMsg(name="user", content=f"就按「{option.label}」这个方案做，其余别动。"),
+            )
+            print(f"<<< Buddy：{followup.get_text_content()}")
 
         print("\n预算：", budget.report())
 
