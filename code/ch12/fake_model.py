@@ -81,7 +81,7 @@ class ScriptedModel(ChatModelBase):
         # ① 写文件：走权限确认
         if "写文件" in text and not self.did_write:
             self.did_write = True
-            # 和第 13 章的 SANDBOX 保持一致：真模型写哪儿，假模型就写哪儿。
+            # 和第 12 章的 SANDBOX 保持一致：真模型写哪儿，假模型就写哪儿。
             # 用 abspath("./sandbox") 会跟着当前工作目录跑，换个目录跑就写飞了。
             target = str(pathlib.Path(__file__).resolve().parent / "sandbox" / "notes.md")
             return one_block(
@@ -90,7 +90,7 @@ class ScriptedModel(ChatModelBase):
                     id=f"write_{self.calls}",
                     name="Write",
                     input=json.dumps(
-                        {"file_path": target, "content": "# 待办\n\n- 补第 13 章\n- 截三张图\n"},
+                        {"file_path": target, "content": "# 待办\n\n- 补第 12 章\n- 截三张图\n"},
                         ensure_ascii=False,
                     ),
                 ),

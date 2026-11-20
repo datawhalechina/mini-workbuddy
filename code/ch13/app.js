@@ -1,4 +1,4 @@
-/* 第 12 章前端：把事件流拼成界面
+/* 第 11 章前端：把事件流拼成界面
  *
  * 三件事：
  *   1. 一个 40 行的 SSE 客户端（fetch + ReadableStream，不用 EventSource）
@@ -12,7 +12,7 @@ const state = {
   sessionId: null,
   messages: [],       // { id, role, blocks: [], els: {}, timelineEl }
   tasks: [],
-  stats: { calls: 0, tools: 0, inTok: 0, outTok: 0, startAt: 0 },
+  stats: { calls: 0, tools: 0, inTok: 0, outTok: 0, cacheTok: 0, startAt: 0 },
   lastEventId: 0,
   streaming: false,
   connecting: false,
@@ -183,6 +183,25 @@ function handle(type, d) {
       break;
     }
 
+    // 确认之后再恢复执行时，事件流里没有 TOOL_CALL_START，直接从
+    // TOOL_RESULT_START 开始。工具名要从这里补上，否则卡片标题会退化成 "tool"。
+    case "TOOL_RESULT_START": {
+      const msg = findByReply(d.reply_id) || currentMessage();
+      if (!msg) break;
+      const existed = msg.blocks.some((b) => b.kind === "tool" && b.key === d.tool_call_id);
+      const block = ensureBlock(msg, d.tool_call_id, "tool");
+      block.name = d.tool_call_name || block.name;
+      block.status = "running";
+      block.output = block.output || "";
+      if (!block.startedAt) block.startedAt = d.ts ? d.ts * 1000 : performance.now();
+      renderTool(msg, block);
+      if (!existed) {
+        state.stats.tools += 1;
+        renderStats();
+      }
+      break;
+    }
+
     // 参数不在 START 里，而是在一串 DELTA 里逐片到达。
     // 拼完之前不要 JSON.parse——半截 JSON 一定报错。
     case "TOOL_CALL_DELTA": {
@@ -282,6 +301,7 @@ function handle(type, d) {
 
     case "done": {
       state.streaming = false;
+      refreshUsage();          // 一轮结束时对一次账
       closeConfirm();
       unlockInput();
       setStatus(state.interrupted ? "已中断" : "");
@@ -621,6 +641,57 @@ function renderTasks(tasks) {
     .join("");
 }
 
+/* ------------------------------------------------------------------ */
+/* 第 13 章：成本与明细                                                */
+/* ------------------------------------------------------------------ */
+
+async function refreshUsage() {
+  if (MOCK || !state.sessionId) return;
+  try {
+    const [sum, log] = await Promise.all([
+      fetch(`/api/usage?session_id=${state.sessionId}`).then((r) => r.json()),
+      fetch(`/api/usage/log?session_id=${state.sessionId}&limit=8`).then((r) => r.json()),
+    ]);
+    renderUsage(sum, log.items || []);
+  } catch {
+    /* 记账失败不该影响聊天 */
+  }
+}
+
+function renderUsage(data, items) {
+  const s = data.summary || {};
+  $("s-cache").textContent = (s.cached_tokens || 0).toLocaleString();
+  $("s-cost").textContent = `¥${(s.cost || 0).toFixed(4)}`;
+
+  const box = $("calls");
+  $("call-count").textContent = items.length;
+  if (items.length === 0) {
+    box.innerHTML = `<div class="muted">还没有记录</div>`;
+    return;
+  }
+  box.innerHTML = items
+    .map((r) => {
+      const t = new Date(r.ts * 1000);
+      const hms = [t.getHours(), t.getMinutes(), t.getSeconds()]
+        .map((n) => String(n).padStart(2, "0"))
+        .join(":");
+      if (r.kind === "model_call") {
+        const tok = `${r.input_tokens}/${r.output_tokens}`;
+        return `<div class="row">
+          <span class="t">${hms}</span>
+          <span class="k">模型调用 <span class="m">${r.elapsed_ms}ms</span></span>
+          <span class="v">${tok} tok · ¥${(r.cost || 0).toFixed(5)}</span>
+        </div>`;
+      }
+      return `<div class="row ${r.state === "error" ? "bad" : ""}">
+        <span class="t">${hms}</span>
+        <span class="k">工具 ${escapeHtml(r.tool || "")} <span class="m">${r.elapsed_ms}ms</span></span>
+        <span class="v">${r.state === "error" ? "失败" : "成功"}</span>
+      </div>`;
+    })
+    .join("");
+}
+
 function renderStats() {
   $("s-calls").textContent = state.stats.calls;
   $("s-tools").textContent = state.stats.tools;
@@ -668,7 +739,7 @@ function showConfirm(toolCalls) {
 /* ------------------------------------------------------------------ */
 
 // 待确认的调用。一次可能并行发起多个，这里只处理第一个，
-// 其余的在界面上用"还有 N 个"提示（第 13.7 节解释为什么不做批量）。
+// 其余的在界面上用"还有 N 个"提示（第 12.7 节解释为什么不做批量）。
 let pending = null;
 
 function openConfirm(toolCalls) {
@@ -758,7 +829,6 @@ async function sendConfirm(decision, extra) {
   pending = null;
   closeConfirm();
 
-
   await fetch("/api/confirm", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
@@ -777,10 +847,6 @@ function escapeHtml(s) {
     "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;",
   }[c]));
 }
-
-/* ------------------------------------------------------------------ */
-/* 七、演示数据（mock.html 用）                                        */
-/* ------------------------------------------------------------------ */
 
 /* ------------------------------------------------------------------ */
 /* 七、演示数据（mock.html 用）                                        */

@@ -1,9 +1,8 @@
-"""第 10 章离线演示：模型给选项，用户来拍板。
+"""第 8 章离线演示：模型给选项，用户来拍板。
 
-默认跑前两段，本章主线。加 --middleware 跑后两段，看另一类插手。
+全程用假模型，不需要 API key。
 
-    cd code/ch10 && python probe_middleware.py
-    cd code/ch10 && python probe_middleware.py --middleware
+    cd code/ch08 && python probe_ask.py
 """
 
 import asyncio
@@ -18,46 +17,34 @@ from agentscope.agent import Agent
 from agentscope.formatter import OpenAIChatFormatter
 from agentscope.message import TextBlock, ToolCallBlock, UserMsg
 from agentscope.model import ChatModelBase, ChatResponse, ChatUsage, FinishedReason
-from agentscope.permission import PermissionMode
-from agentscope.tool import FunctionTool, Toolkit
 
 HERE = pathlib.Path(__file__).resolve().parent
 sys.path.insert(0, str(HERE))
 
-from middlewares import (  # noqa: E402
-    AuditMiddleware,
-    RedactMiddleware,
-    StampMiddleware,
-)
 
-
+# ---------------------------------------------------------------------------
+# 一、要模型交出来的结构
+# ---------------------------------------------------------------------------
 class ActionOption(BaseModel):
     """一个候选方案。"""
 
     label: str = Field(description="方案的短名，一句话以内")
-    detail: str = Field(description="这个方案具体做什么")
-    risk: str = Field(description="风险等级，低 / 中 / 高")
+    detail: str = Field(description="这个方案具体做什么，让用户看得懂后果")
+    risk: str = Field(description="风险等级，涉及删除或外发时为高")
 
 
 class ActionPlan(BaseModel):
     """模型给出的待拍板方案。"""
 
-    question: str = Field(description="需要用户拍板的问题")
+    question: str = Field(description="需要用户回答的问题")
     options: list[ActionOption] = Field(description="两到四个候选方案，按推荐程度排序")
-    reason: str = Field(description="为什么这件事要交给用户决定")
+    reason: str = Field(description="为什么这件事要交给用户决定，而不是模型自己定")
 
 
-class MeetingSummary(BaseModel):
-    """会议纪要，10.3 用它讲结构化输出的机制。"""
-
-    title: str = Field(description="会议主题")
-    decisions: list[str] = Field(description="达成的决定")
-    attendees: int = Field(description="参会人数")
-
-
+# ---------------------------------------------------------------------------
+# 二、按剧本回答的假模型：见到结构化工具，就填一份方案清单
+# ---------------------------------------------------------------------------
 class ScriptedModel(ChatModelBase):
-    """按剧本回答：给出三个候选方案；中间件演示时发一次短信。"""
-
     def __init__(self) -> None:
         self.model = "scripted"
         self.stream = False
@@ -103,38 +90,17 @@ class ScriptedModel(ChatModelBase):
                 usage=ChatUsage(input_tokens=120, output_tokens=18, time=0.01),
             )
 
-        # 中间件演示：第一轮发一次短信
-        if self.calls == 1 and "send_sms" in names:
-            return ChatResponse(
-                content=[ToolCallBlock(
-                    type="tool_call", id="c2", name="send_sms",
-                    input=json.dumps(
-                        {"phone": "13812345678", "text": "明天九点开会"},
-                        ensure_ascii=False,
-                    ),
-                )],
-                is_last=True, id="r2", type="chat_response",
-                usage=ChatUsage(input_tokens=120, output_tokens=18, time=0.01),
-            )
-
         return ChatResponse(
-            content=[TextBlock(type="text", text="短信已发出。")],
-            is_last=True, id="r3", type="chat_response",
+            content=[TextBlock(type="text", text="好的，按你说的办。")],
+            is_last=True, id="r2", type="chat_response",
             usage=ChatUsage(input_tokens=180, output_tokens=12, time=0.01),
             finished_reason=FinishedReason.COMPLETED,
         )
 
 
-async def send_sms(phone: str, text: str) -> str:
-    """给指定手机号发短信。
-
-    Args:
-        phone: 手机号
-        text: 短信内容
-    """
-    return f"已发送给 {phone}：{text}"
-
-
+# ---------------------------------------------------------------------------
+# 三、两道关：选一个，再确认一次
+# ---------------------------------------------------------------------------
 def choose(plan: ActionPlan, answers: Iterator[str]) -> ActionOption | None:
     """把模型给的选项摆出来，让用户挑一个。"""
     print(f"  模型问：{plan.question}")
@@ -147,12 +113,13 @@ def choose(plan: ActionPlan, answers: Iterator[str]) -> ActionOption | None:
 
 
 def confirm(option: ActionOption, answers: Iterator[str]) -> bool:
-    """同意或不同意，第 7 章那道闸机在命令行里的样子。"""
+    """同意或不同意。选方案不等于批准执行，所以要多问一次。"""
     print(f"  再问一次：确认执行「{option.label}」？[y/N]")
     return next(answers).strip().lower() == "y"
 
 
 async def plan_for(question: str) -> ActionPlan:
+    """让模型出一份方案清单，结构化拿回来。"""
     agent = Agent(
         name="Buddy",
         system_prompt="你是一个文件助手。拿不准的时候给出候选方案，让用户选。",
@@ -191,49 +158,9 @@ async def demo_reject() -> None:
     print("  执行：无，高风险方案停在确认这一步")
 
 
-def make_agent(audit: AuditMiddleware, order: list) -> Agent:
-    agent = Agent(
-        name="Buddy",
-        system_prompt="你是一个通知助手。",
-        model=ScriptedModel(),
-        toolkit=Toolkit(tools=[FunctionTool(send_sms)]),
-        middlewares=order,
-    )
-    agent.state.permission_context.mode = PermissionMode.BYPASS
-    return agent
-
-
-async def demo_middlewares() -> None:
-    print()
-    print("--- 3. 换一个角度，中间件在旁边记流水")
-    audit = AuditMiddleware()
-    agent = make_agent(audit, [RedactMiddleware(), audit, StampMiddleware(stamp="ch10-demo")])
-    msg = await agent.reply(UserMsg(name="user", content="给 13812345678 发条短信"))
-    print(f"  回复：{msg.get_text_content()}")
-    for line in audit.dump().splitlines():
-        print(f"  {line}")
-
-
-async def demo_order() -> None:
-    print()
-    print("--- 4. 只换注册顺序，审计记下的是哪个号码")
-    for order, label in (
-        ([AuditMiddleware(), RedactMiddleware()], "先审计，后脱敏"),
-        ([RedactMiddleware(), AuditMiddleware()], "先脱敏，后审计"),
-    ):
-        audit = next(m for m in order if isinstance(m, AuditMiddleware))
-        agent = make_agent(audit, order)
-        await agent.reply(UserMsg(name="user", content="给 13812345678 发条短信"))
-        print(f"  {label}：{audit.records[1]['input'][:34]}")
-
-
 async def main() -> None:
-    if "--middleware" in sys.argv:
-        await demo_middlewares()
-        await demo_order()
-    else:
-        await demo_approve()
-        await demo_reject()
+    await demo_approve()
+    await demo_reject()
 
 
 if __name__ == "__main__":

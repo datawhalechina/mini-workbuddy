@@ -1,4 +1,4 @@
-"""第 11 章的运行时：把 Agent 的事件流变成浏览器能读的 SSE。
+"""第 10 章的运行时：把 Agent 的事件流变成浏览器能读的 SSE。
 
 三个关键设计：
   1. 一个会话一个后台任务，客户端断开不取消任务
@@ -59,7 +59,7 @@ def event_to_dict(event: Any) -> dict[str, Any]:
     for field in (
         "delta", "tool_call_id", "tool_call_name", "state",
         "input_tokens", "output_tokens", "finished_reason", "hint",
-        # 模型名与缓存命中量：第 14 章记账要用，界面上也值得显示
+        # 模型名与缓存命中量：第 13 章记账要用，界面上也值得显示
         "model_name", "cache_input_tokens",
     ):
         value = getattr(event, field, None)

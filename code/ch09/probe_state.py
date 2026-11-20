@@ -1,7 +1,7 @@
 """第 9 章：开工前先跑一遍，看清会话是怎么活下来的。
 
 全程只碰 AgentState，不造 Agent，也不调模型，所以不需要 API key。
-四段输出分别对应 9.2 到 9.5 的四个结论。
+四段输出：两个 state 各记各的、磁盘上多出两个文件、删掉对象还能读回、三个字段的去留。
 
     cd code/ch09 && python probe_state.py
 """
@@ -71,7 +71,7 @@ async def main() -> None:
         f"cur_iter={again.reply_context.cur_iter}　"
         f"activated_groups={again.tool_context.activated_groups}",
     )
-    print("  前两个被 load() 清掉了，工具组原样留着")
+    print("  前两个被 load() 清掉了，工具状态原样留着")
 
     shutil.rmtree(root, ignore_errors=True)
 

@@ -1,4 +1,4 @@
-/* 第 12 章界面样式：三栏布局，浅色，不依赖任何 CSS 框架 */
+/* 第 11 章界面样式：三栏布局，浅色，不依赖任何 CSS 框架 */
 
 :root {
   --bg: #f7f8fa;
@@ -144,7 +144,9 @@ button:disabled { opacity: .5; cursor: not-allowed; }
 /* 结果条 */
 .notice { border-radius: 8px; padding: 10px 12px; font-size: 12.5px; margin: 8px 0; }
 .notice.error { background: #fbeeeb; border: 1px solid #f0d5d0; color: #96594c; }
-.notice.info { background: #f2f5fc; border: 1px solid #dbe5fb; color: #3f5787; }
+.notice.info {
+  background: #fbfcfd; border: 1px dashed #d7dfea; color: var(--ink-2);
+}
 
 /* 输入区 */
 .composer { flex: none; border-top: 1px solid var(--line); background: #fff; padding: 12px 0 16px; }
@@ -189,3 +191,59 @@ textarea {
 /* 事件日志：一行一条，不折行。折行会让"哪条先到"看不出来。 */
 .log { font-family: Consolas, Menlo, monospace; font-size: 10.5px; color: var(--ink-3);
   max-height: 168px; overflow: auto; line-height: 1.65; white-space: pre; }
+
+/* ---------- 确认与提问：遮罩上的两种卡片 ---------- */
+.modal-mask {
+  position: fixed; inset: 0; background: rgba(24, 32, 44, .28);
+  display: flex; align-items: center; justify-content: center; z-index: 50;
+  animation: fade .12s ease-out;
+}
+@keyframes fade { from { opacity: 0; } to { opacity: 1; } }
+
+.modal {
+  width: 460px; background: #fff; border-radius: 12px;
+  box-shadow: 0 12px 40px rgba(16, 24, 40, .18);
+  overflow: hidden; animation: pop .14s ease-out;
+}
+@keyframes pop { from { transform: translateY(6px) scale(.99); } to { transform: none; } }
+
+.modal .mh {
+  display: flex; align-items: center; gap: 8px;
+  padding: 13px 16px; border-bottom: 1px solid var(--line);
+}
+.modal .tag { font-size: 11px; padding: 2px 8px; border-radius: 9px; }
+.modal .tag.danger { background: #fbeeeb; color: var(--red); }
+.modal .tag.ask { background: #eef3fe; color: var(--blue); }
+.modal .tool { font-size: 13px; font-weight: 600; font-family: Consolas, monospace; }
+
+.modal .mb { padding: 14px 16px; }
+.modal .args {
+  font-family: Consolas, monospace; font-size: 11.5px; color: var(--ink-2);
+  background: #fbfcfd; border: 1px solid var(--line); border-radius: 8px;
+  padding: 10px 12px; max-height: 160px; overflow: auto; white-space: pre-wrap;
+  margin: 0 0 10px;
+}
+.modal .why { font-size: 11.5px; color: var(--ink-3); line-height: 1.6; }
+
+.modal .question { font-size: 14px; line-height: 1.7; margin-bottom: 12px; }
+.modal .options { display: flex; flex-direction: column; gap: 6px; }
+.modal .opt {
+  text-align: left; padding: 9px 12px; font-size: 13px; color: var(--ink);
+  border: 1px solid var(--line); border-radius: 8px; background: #fbfcfd;
+  display: flex; align-items: center; gap: 8px;
+}
+.modal .opt::before { content: "○"; color: var(--ink-3); font-size: 12px; }
+.modal .opt:hover { border-color: #b9c9ea; background: #f2f6fe; color: var(--blue); }
+.modal .opt:hover::before { content: "●"; color: var(--blue); }
+.modal .free { display: flex; gap: 8px; margin-top: 10px; }
+.modal .free input {
+  flex: 1; border: 1px solid var(--line); border-radius: 8px;
+  padding: 8px 10px; font-size: 13px; font-family: inherit; outline: 0;
+}
+.modal .free input:focus { border-color: #b9c9ea; }
+
+.modal .mf {
+  display: flex; align-items: center; justify-content: flex-end; gap: 8px;
+  padding: 12px 16px; border-top: 1px solid var(--line); background: #fbfcfd;
+}
+.modal .mf .muted, .modal .muted { font-size: 11.5px; color: var(--ink-3); margin-right: auto; }

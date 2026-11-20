@@ -78,7 +78,7 @@ async def chat_loop(agent: Agent) -> None:
             print(reply.get_text_content())
         except Exception as exc:  # noqa: BLE001
             # 网络抖动、key 过期、额度用光——都只影响这一轮，不该把整个会话打死。
-            # 第 13 章会把这里换成框架自带的错误对象。
+            # 第 12 章会把这里换成框架自带的错误对象。
             # type(exc).__name__ 打出异常类名，便于快速定位是哪类问题
             print(f"[出错] {type(exc).__name__}: {exc}")
             print("  先查 .env 里的 BASE_URL 与 MODEL 是否配对，常见错误见 1.5 节。")

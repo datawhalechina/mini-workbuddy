@@ -1,4 +1,4 @@
-"""第 13 章：把交互闭环补完。
+"""第 12 章：把交互闭环补完。
 
 比上一章多了什么：
   1. POST /api/confirm 从"是与否"升级成"允许一次 / 一直允许 / 拒绝"，
@@ -22,7 +22,7 @@ import uuid
 from typing import Any, AsyncGenerator
 
 HERE = pathlib.Path(__file__).resolve().parent
-sys.path.insert(0, str(HERE.parent / "ch11"))   # 复用第 11 章的运行时
+sys.path.insert(0, str(HERE.parent / "ch10"))   # 复用第 10 章的运行时
 
 from dotenv import load_dotenv                                    # noqa: E402
 from fastapi import FastAPI, HTTPException                        # noqa: E402
@@ -94,7 +94,7 @@ def build_agent() -> Agent:
 
 
 # ---------------------------------------------------------------------------
-# 一、会话：在第 11 章的 Session 上只加一个方法
+# 一、会话：在第 10 章的 Session 上只加一个方法
 # ---------------------------------------------------------------------------
 class InteractiveSession(Session):
     """多了"打断"能力的会话。"""
@@ -139,7 +139,7 @@ class InteractiveRegistry(Registry):
 registry = InteractiveRegistry()
 
 
-app = FastAPI(title="mini-workbuddy · ch13")
+app = FastAPI(title="mini-workbuddy · ch12")
 
 
 # ---------------------------------------------------------------------------

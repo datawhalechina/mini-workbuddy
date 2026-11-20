@@ -1,13 +1,13 @@
-"""第 15 章：毕业自检。
+"""第 14 章：毕业自检。
 
 跑一遍，六项全过就算毕业：
 
-    cd code/ch15 && python checkup.py
+    cd code/ch14 && python checkup.py
 
 它不启动 Web 服务，直接在进程内驱动会话——把每一轮的事件收进列表再断言。
 这样自检脚本自己就不会因为端口、前端、浏览器而失败。
 
-六项对应第 15.1 节的六个任务：
+六项对应第 14.1 节的六个任务：
     1 对话通路      文本增量与结束原因
     2 工具落地      允许之后文件真的写出来
     3 权限拦截      拒绝之后文件不存在
@@ -31,32 +31,32 @@ if hasattr(sys.stdout, "reconfigure"):
     sys.stdout.reconfigure(encoding="utf-8")
 
 HERE = pathlib.Path(__file__).resolve().parent
-sys.path.insert(0, str(HERE.parent / "ch13"))     # 应用装配
-sys.path.insert(0, str(HERE.parent / "ch11"))     # 运行时
-sys.path.insert(0, str(HERE.parent / "ch14"))     # 记账
+sys.path.insert(0, str(HERE.parent / "ch12"))     # 应用装配
+sys.path.insert(0, str(HERE.parent / "ch10"))     # 运行时
+sys.path.insert(0, str(HERE.parent / "ch13"))     # 记账
 
 REAL = "--real" in sys.argv
 if not REAL:
     os.environ["MOCK"] = "1"
 os.environ.setdefault("MOCK_DELAY", "0.02")
 
-import server as ch13                                          # noqa: E402
+import server as ch12                                          # noqa: E402
 from agentscope.state import AgentState                       # noqa: E402
 from agentscope.event import ConfirmResult, UserConfirmResultEvent   # noqa: E402
 from agentscope.message import ToolCallBlock                   # noqa: E402
 
 from telemetry import Recorder, UsageLog                       # noqa: E402
 
-# 工具写到第 13 章那个沙箱里（Agent 的提示词里写的就是这个绝对路径），
+# 工具写到第 12 章那个沙箱里（Agent 的提示词里写的就是这个绝对路径），
 # 不是当前目录。跟着应用走，别自己另立一个。
-TARGET = pathlib.Path(ch13.SANDBOX) / "notes.md"
+TARGET = pathlib.Path(ch12.SANDBOX) / "notes.md"
 LOG = HERE / "logs" / "checkup.jsonl"
 
 
 # ---------------------------------------------------------------------------
 # 探针会话：把发出的每一帧留下来
 # ---------------------------------------------------------------------------
-class Probe(ch13.Session):
+class Probe(ch12.Session):
     def __init__(self, session_id, agent, recorder=None) -> None:
         super().__init__(session_id, agent)
         self.events: list[tuple[str, dict]] = []
@@ -86,7 +86,7 @@ class Probe(ch13.Session):
 
 
 def new_session(recorder=None) -> Probe:
-    return Probe(uuid.uuid4().hex[:8], ch13.build_agent(), recorder)
+    return Probe(uuid.uuid4().hex[:8], ch12.build_agent(), recorder)
 
 
 async def wait(session: Probe, timeout: float = 20.0) -> None:
@@ -273,7 +273,7 @@ async def main() -> int:
     if failed:
         print(f"{failed} 项没过。对着上面那一行去翻对应的章节。")
         return 1
-    print("六项全过。接下来看第 15.2 节，选一条升级路线。")
+    print("六项全过。接下来看第 14.2 节，选一条升级路线。")
     return 0
 
 

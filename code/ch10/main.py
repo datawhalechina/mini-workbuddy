@@ -1,34 +1,35 @@
-"""第 10 章：在关键节点插手。
+"""第 10 章：把 Agent 包成一个 HTTP 服务。
 
-本章的重点是让人插手。模型给出候选方案，用户拍板之后代码才动手。
-中间件是另一类插手，由框架在后台记账、脱敏、控预算。
+启动：
+    python main.py
+    # 或者 uvicorn main:app --port 8848 --reload
+
+五个接口：
+    POST /api/sessions            新建会话
+    GET  /api/sessions            会话列表
+    POST /api/chat                发起一轮回复（立刻返回，不等结果）
+    GET  /api/stream/{id}         SSE 事件流
+    POST /api/confirm             回复一次确认请求
 """
 
 import asyncio
+import json
 import os
-import time
-from typing import Any, Callable
+from typing import Any, AsyncGenerator
 
 from dotenv import load_dotenv
-from pydantic import BaseModel, Field
+from fastapi import FastAPI, HTTPException
+from fastapi.responses import FileResponse, StreamingResponse
+from pydantic import BaseModel
 
 from agentscope.agent import Agent
 from agentscope.credential import OpenAICredential
-from agentscope.event import EventType
-from agentscope.message import UserMsg
-from agentscope.middleware import MiddlewareBase
+from agentscope.event import ConfirmResult, UserConfirmResultEvent
 from agentscope.model import OpenAIChatModel
 from agentscope.permission import PermissionMode
-from agentscope.tool import Toolkit
-from agentscope.workspace import LocalWorkspace
+from agentscope.tool import Toolkit, Write
 
-from middlewares import (
-    AuditMiddleware,
-    RedactMiddleware,
-    StampMiddleware,
-    tap_usage,
-)
-
+from runtime import Registry, Session
 
 load_dotenv(override=True)
 
@@ -36,71 +37,27 @@ API_KEY = os.getenv("OPENAI_API_KEY", "")
 BASE_URL = os.getenv("OPENAI_BASE_URL", "")
 MODEL_NAME = os.getenv("OPENAI_MODEL", "gpt-4o-mini")
 
-WORKDIR = "./sandbox"
+HERE = os.path.dirname(os.path.abspath(__file__))
+
+# 工具的工作目录。给模型的提示里必须写绝对路径——
+# Write 只认绝对路径，写 "./sandbox/x.md" 会被直接拒绝。
+SANDBOX = os.path.join(HERE, "sandbox")
+os.makedirs(SANDBOX, exist_ok=True)
+
+# 心跳间隔（秒）。代理通常会掐掉 60 秒无数据的连接。
+HEARTBEAT = float(os.getenv("SSE_HEARTBEAT", "15"))
+registry = Registry()
 
 
 # ---------------------------------------------------------------------------
-# 一类插手：框架在后台干活，用户看不见
+# 模型：有 key 用真模型，没 key 用假模型，保证服务一定能起来
 # ---------------------------------------------------------------------------
-class BudgetMiddleware(MiddlewareBase):
-    """给一次会话设 token 上限。"""
-
-    def __init__(self, limit: int = 60_000, price_per_k: float = 0.002) -> None:
-        self.limit = limit
-        self.price_per_k = price_per_k
-        self.used = 0
-        self.exceeded = False
-        self.spent = 0.0
-
-    async def on_model_call(
-        self,
-        agent,
-        input_kwargs: dict,
-        next_handler: Callable[..., Any],
-    ):
-        if self.used >= self.limit:
-            self.exceeded = True
-            raise RuntimeError(
-                f"预算已用尽：{self.used}/{self.limit} tokens。"
-                "请新建会话，或调高上限。",
-            )
-
-        def charge(usage) -> None:
-            if usage is None:
-                return
-            tokens = usage.input_tokens + usage.output_tokens
-            self.used += tokens
-            self.spent += tokens / 1000 * self.price_per_k
-
-        return tap_usage(await next_handler(), charge)
-
-    def report(self) -> str:
-        return (
-            f"用量 {self.used}/{self.limit} tokens，"
-            f"估算花费 {self.spent:.4f} 元"
-        )
-
-
-# ---------------------------------------------------------------------------
-# 另一类插手：模型只出方案，拍板权在人手里
-# ---------------------------------------------------------------------------
-class ActionOption(BaseModel):
-    """一个候选方案。"""
-
-    label: str = Field(description="方案的短名，一句话以内")
-    detail: str = Field(description="这个方案具体做什么，让用户看得懂后果")
-    risk: str = Field(description="风险等级，低 / 中 / 高")
-
-
-class ActionPlan(BaseModel):
-    """模型给出的待拍板方案。"""
-
-    question: str = Field(description="需要用户拍板的问题")
-    options: list[ActionOption] = Field(description="两到四个候选方案，按推荐程度排序")
-    reason: str = Field(description="为什么这件事要交给用户决定，而不是模型自己定")
-
-
-def build_model() -> OpenAIChatModel:
+def build_model():
+    # 想强制用假模型联调，启动前设置 MOCK=1
+    if os.getenv("MOCK") == "1" or not API_KEY:
+        from mock_model import MockModel
+        print("[启动] 没有检测到 OPENAI_API_KEY，使用 MockModel（回复是预设的）")
+        return MockModel()
     return OpenAIChatModel(
         credential=OpenAICredential(api_key=API_KEY, base_url=BASE_URL or None),
         model=MODEL_NAME,
@@ -108,107 +65,130 @@ def build_model() -> OpenAIChatModel:
     )
 
 
-def render(event) -> None:
-    if event.type == EventType.TEXT_BLOCK_DELTA:
-        print(getattr(event, "delta", ""), end="", flush=True)
-    elif event.type == EventType.TOOL_CALL_START:
-        print(f"\n  → {getattr(event, 'tool_call_name', '')}", flush=True)
-
-
-async def build_agent(workspace: LocalWorkspace):
-    tools = await workspace.list_tools()
-    instructions = await workspace.get_instructions()
-
-    audit = AuditMiddleware()
-    redact = RedactMiddleware()
-    stamp = StampMiddleware(stamp="mini-workbuddy/ch10")
-    budget = BudgetMiddleware(limit=60_000)
-
+def build_agent() -> Agent:
     agent = Agent(
         name="Buddy",
-        system_prompt="你叫 Buddy，一个文件助手。\n\n" + instructions,
+        system_prompt=(
+            "你叫 Buddy，一个文件助手。回答简洁。"
+            "需要写文件时直接调用 Write 工具。"
+            # Write 只接受绝对路径，写成相对路径会直接报错，
+            # 所以这里把沙箱的绝对路径原样告诉模型。
+            f"所有文件一律写到 {SANDBOX} 目录下。"
+        ),
         model=build_model(),
-        toolkit=Toolkit(tools=tools),
-        offloader=workspace,
-        # 顺序即执行顺序，先脱敏，审计看到的就已经是掩码
-        middlewares=[redact, audit, budget, stamp],
+        toolkit=Toolkit(tools=[Write()]),
     )
-    # 业务上的拍板由下面的菜单做，第 7 章那层安全确认在这个 demo 里跳过
-    agent.state.permission_context.mode = PermissionMode.BYPASS
-    return agent, audit, budget
+    agent.state.permission_context.mode = PermissionMode.DEFAULT
+    return agent
 
 
-def choose_option(plan: ActionPlan) -> ActionOption | None:
-    """把模型给的选项摆出来，让用户挑一个。"""
-    print(f"\n{plan.question}")
-    print(f"模型的理由：{plan.reason}")
-    for i, opt in enumerate(plan.options, 1):
-        print(f"  [{i}] {opt.label}（风险 {opt.risk}）{opt.detail}")
-    print("  [0] 都不做")
-
-    raw = input("选一个编号 > ").strip()
-    if raw == "0":
-        return None
-    return plan.options[int(raw) - 1]
+# ---------------------------------------------------------------------------
+# 请求体
+# ---------------------------------------------------------------------------
+class ChatRequest(BaseModel):
+    session_id: str
+    text: str
 
 
-def confirm_execution(option: ActionOption) -> bool:
-    """再问一次，同意才往下走。"""
-    answer = input(f"确认执行「{option.label}」？[y/N] ").strip().lower()
-    return answer == "y"
+class ConfirmRequest(BaseModel):
+    session_id: str
+    confirmed: bool
 
 
-async def main() -> None:
-    os.makedirs(WORKDIR, exist_ok=True)
+app = FastAPI(title="mini-workbuddy")
 
-    async with LocalWorkspace(workdir=WORKDIR) as workspace:
-        agent, audit, budget = await build_agent(workspace)
 
-        # ---- 第一段：普通对话，中间件在旁边记流水 ----
-        print("=" * 70)
-        print("一、普通对话")
-        print("=" * 70)
-        question = "看看工作区里有什么文件，用一句话告诉我。"
-        print(f">>> 你：{question}\n")
+# ---------------------------------------------------------------------------
+# 静态页
+# ---------------------------------------------------------------------------
+@app.get("/")
+async def index() -> FileResponse:
+    return FileResponse(os.path.join(HERE, "static", "index.html"))
 
-        start = time.time()
-        msg = await agent.reply(UserMsg(name="user", content=question))
-        print(f"<<< Buddy：{msg.get_text_content()}")
-        print(f"\n耗时 {time.time() - start:.1f}s")
 
-        print("\n中间件记录：")
-        print(audit.dump())
-        print("预算：", budget.report())
+# ---------------------------------------------------------------------------
+# 会话
+# ---------------------------------------------------------------------------
+@app.post("/api/sessions")
+async def create_session() -> dict[str, Any]:
+    session = registry.create(build_agent)
+    return {"session_id": session.session_id}
 
-        # ---- 第二段：模型出方案，用户拍板 ----
-        print()
-        print("=" * 70)
-        print("二、模型出方案，用户拍板")
-        print("=" * 70)
 
-        risky = "工作区里文件有点乱，帮我清一清，顺便把摘要发到 13900001111。"
-        print(f">>> 你：{risky}\n")
+@app.get("/api/sessions")
+async def list_sessions() -> dict[str, Any]:
+    return {"items": registry.list()}
 
-        plan_msg = await agent.reply(
-            UserMsg(name="user", content=risky),
-            structured_schema=ActionPlan,
-        )
-        plan = ActionPlan(**plan_msg.structured_output)
-        option = choose_option(plan)
 
-        if option is None:
-            print("\n[停止] 你选了都不做，代码一步没动。")
-        elif not confirm_execution(option):
-            print("\n[停止] 你没同意，代码一步没动。")
-        else:
-            print(f"\n[执行] 按「{option.label}」继续。")
-            followup = await agent.reply(
-                UserMsg(name="user", content=f"就按「{option.label}」这个方案做，其余别动。"),
-            )
-            print(f"<<< Buddy：{followup.get_text_content()}")
+def _get(session_id: str) -> Session:
+    session = registry.get(session_id)
+    if session is None:
+        raise HTTPException(status_code=404, detail="会话不存在")
+    return session
 
-        print("\n预算：", budget.report())
+
+# ---------------------------------------------------------------------------
+# 对话与事件流
+# ---------------------------------------------------------------------------
+@app.post("/api/chat")
+async def chat(body: ChatRequest) -> dict[str, Any]:
+    session = _get(body.session_id)
+    if session.running:
+        raise HTTPException(status_code=409, detail="上一条回复还在进行中")
+    await session.start_reply(body.text)
+    return {"ok": True, "session_id": session.session_id}
+
+
+@app.get("/api/stream/{session_id}")
+async def stream(session_id: str, last_event_id: int = 0) -> StreamingResponse:
+    session = _get(session_id)
+
+    async def gen() -> AsyncGenerator[str, None]:
+        # 先发一个注释帧，让浏览器立刻建立连接
+        yield ": connected\n\n"
+
+        agen = session.subscribe(from_seq=last_event_id)
+        while True:
+            try:
+                frame = await asyncio.wait_for(agen.__anext__(), timeout=HEARTBEAT)
+            except asyncio.TimeoutError:
+                # 心跳：中间有代理或负载均衡时，长时间无数据会被掐断
+                yield ": ping\n\n"
+                continue
+            except StopAsyncIteration:
+                return
+            yield frame
+
+    return StreamingResponse(
+        gen(),
+        media_type="text/event-stream",
+        headers={
+            "Cache-Control": "no-cache",
+            "X-Accel-Buffering": "no",     # 关掉 Nginx 缓冲，否则会攒着不发
+        },
+    )
+
+
+@app.post("/api/confirm")
+async def confirm(body: ConfirmRequest) -> dict[str, Any]:
+    session = _get(body.session_id)
+    pending = session.confirm_pending
+    if pending is None:
+        raise HTTPException(status_code=409, detail="当前没有待确认的调用")
+
+    results = [
+        ConfirmResult(confirmed=body.confirmed, tool_call=call)
+        for call in pending.tool_calls
+    ]
+    session.confirm_pending = None
+    # 续跑：把确认结果作为输入再喂进 reply_stream
+    await session.start_resume(
+        UserConfirmResultEvent(reply_id=pending.reply_id, confirm_results=results),
+    )
+    return {"ok": True}
 
 
 if __name__ == "__main__":
-    asyncio.run(main())
+    import uvicorn
+
+    uvicorn.run(app, host="127.0.0.1", port=8848)

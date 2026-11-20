@@ -39,7 +39,7 @@ OPENAI_MODEL=your-model-name
 
 `OPENAI_BASE_URL` 为空时会连官方地址。本地部署（vLLM、Ollama、GPUStack）一定要填，否则请求会发到公网上去。
 
-`.env` 必须进 `.gitignore`。这一条在第 15.4 节的清单里排第一，因为它出事之后没法撤回。
+`.env` 必须进 `.gitignore`。这一条在第 14.4 节的清单里排第一，因为它出事之后没法撤回。
 
 ## A.3 常见兼容端点
 
@@ -77,7 +77,7 @@ curl https://your-endpoint/v1/models \
 | `404 model not found` | 模型名不对 | 用 A.3 的 curl 列出可用模型名，照抄 |
 | `Error: file_path must be an absolute path` | `Write` 只接受绝对路径 | 提示词里直接给出沙箱的绝对路径，不要写 `./sandbox` |
 | `TypeError: 'async_generator' object is not iterable` | 对异步生成器用了 `enumerate` | 自己维护计数器，见第 2 章 |
-| `400 context length exceeded` | 上下文超了 | 第 8 章的 `ContextConfig` 调小 `trigger_ratio` |
+| `400 context length exceeded` | 上下文超了 | 换更大窗口的模型，或缩短单次输入 |
 | `ConnectError` / `Timeout` | 网络或代理 | 见下一条 |
 | 请求全部 502，但浏览器能打开网页 | 系统代理拦截了 Python | 见下一条 |
 | `TypeError: object AsyncGenerator can't be used in await` | 把流式响应当协程等了 | 模型调用返回的是异步生成器，不要 `await` |
@@ -132,7 +132,7 @@ opener = urllib.request.build_opener(urllib.request.ProxyHandler({}))
 
 ## A.5 算自己的成本
 
-不要相信任何"某模型多便宜"的结论，价格变动频繁。用第 14 章的公式，把当前单价填进去自己算：
+不要相信任何"某模型多便宜"的结论，价格变动频繁。用第 13 章的公式，把当前单价填进去自己算：
 
 ```
 单次回复成本 = 输入 tokens / 1e6 × 输入单价 + 输出 tokens / 1e6 × 输出单价
@@ -143,7 +143,7 @@ opener = urllib.request.build_opener(urllib.request.ProxyHandler({}))
 - **输入 token 数随轮次线性增长。** 第 9 章之后每轮都带完整上下文，第 10 轮的单次成本大约是第 1 轮的好几倍
 - **缓存输入的价格通常是正常输入的一到两成。** 同一个会话连续聊，从第二轮开始普遍有缓存命中；换话题重新开头，命中率会掉下来
 
-所以"一次对话多少钱"这个问题没有统一答案，只有"你的使用方式下多少钱"。第 14 章的面板就是为回答这个问题做的。
+所以"一次对话多少钱"这个问题没有统一答案，只有"你的使用方式下多少钱"。第 13 章的面板就是为回答这个问题做的。
 
 ## 附录 B　事件类型全表
 
@@ -231,14 +231,13 @@ python -c "from agentscope.event import ToolCallStartEvent as E; print(E.model_f
 | 5 | `code/ch05` | 工作区与路径边界 | `LocalWorkspace`, 先读后写 |
 | 6 | `code/ch06` | 自定义工具 | `ToolBase.call`, 错误返回 |
 | 7 | `code/ch07` | 权限系统 | `PermissionMode`, `PermissionRule`, `PermissionEngine` |
-| 8 | `code/ch08` | 计划模式与上下文压缩 | `ContextConfig`, `Task`, `todo` |
+| 8 | `code/ch08` | 给选项与拍板 | `structured_schema`, `ActionPlan` |
 | 9 | `code/ch09` | 状态持久化 | `AgentState`, `model_dump_json` |
-| 10 | `code/ch10` | 中间件与结构化输出 | `MiddlewareBase`, `structured_schema` |
-| 11 | `code/ch11` | 后端与事件流 | `FastAPI`, `StreamingResponse`, SSE 帧 |
-| 12 | `code/ch12` | 前端渲染 | reducer, `ReadableStream`, 增量拼接 |
-| 13 | `code/ch13` | 确认、提问、中断 | `UserConfirmResultEvent`, `UserInterruptEvent` |
-| 14 | `code/ch14` | 记账与可观测 | `MODEL_CALL_END` 字段, JSONL |
-| 15 | `code/ch15` | 交付与自检 | `create_app`, `GoalPipeline`, `MCPClient` |
+| 10 | `code/ch10` | 后端与事件流 | `FastAPI`, `StreamingResponse`, SSE 帧 |
+| 11 | `code/ch11` | 前端渲染 | reducer, `ReadableStream`, 增量拼接 |
+| 12 | `code/ch12` | 确认、提问、中断 | `UserConfirmResultEvent`, `UserInterruptEvent` |
+| 13 | `code/ch13` | 记账与可观测 | `MODEL_CALL_END` 字段, JSONL |
+| 14 | `code/ch14` | 交付与自检 | `create_app`, `GoalPipeline`, `MCPClient` |
 
 ### C.2 想改某个东西，去哪个文件
 
@@ -247,18 +246,17 @@ python -c "from agentscope.event import ToolCallStartEvent as E; print(E.model_f
 | 换模型 / 换服务商 | `build_model()`，每章一份，改一处 |
 | 加一个工具 | `code/ch06/main.py` 里按 `ToolBase` 三件套写：`name / description / input_schema` + `call()` |
 | 改权限判定 | `code/ch07/main.py` 的规则配置 |
-| 改上下文压缩阈值 | `ContextConfig(trigger_ratio=...)` |
-| 加一个接口 | `code/ch13/server.py`，注意插在静态目录之前 |
-| 改界面布局 | `code/ch14/index.html` + `style.css` |
-| 改事件渲染 | `code/ch14/app.js` 的 `handle()` switch |
-| 加一项统计 | `code/ch14/telemetry.py` 的 `Recorder.observe` |
+| 加一个接口 | `code/ch12/server.py`，注意插在静态目录之前 |
+| 改界面布局 | `code/ch13/index.html` + `style.css` |
+| 改事件渲染 | `code/ch13/app.js` 的 `handle()` switch |
+| 加一项统计 | `code/ch13/telemetry.py` 的 `Recorder.observe` |
 
 ### C.3 三种运行模式
 
 | 模式 | 命令 | 需要 key | 用途 |
 |---|---|---|---|
-| 纯前端 | 双击 `code/ch12/mock.html` | 否 | 调界面、截图、给人看效果 |
+| 纯前端 | 双击 `code/ch11/mock.html` | 否 | 调界面、截图、给人看效果 |
 | 假模型 | `MOCK=1 python main.py` | 否 | 调后端、调事件流、跑自检 |
 | 真模型 | 填好 `.env` 后 `python main.py` | 是 | 实际使用 |
 
-第三种模式用的是 OpenAI 兼容端点上的 `deepseek-v4.1-flash`，实测下来一轮普通问答约 0.3 到 20 秒（思考型模型波动大），自检脚本六项全过。前两种模式也保留着——它们的价值不只是省下几块钱：**把假模型这条路修好，整个开发过程就不再依赖外部服务。** 第 13 章的 `fake_model.py` 和第 12 章的 `mock_data.js` 值得你在自己的项目里也留一份。
+第三种模式用的是 OpenAI 兼容端点上的 `deepseek-v4.1-flash`，实测下来一轮普通问答约 0.3 到 20 秒（思考型模型波动大），自检脚本六项全过。前两种模式也保留着——它们的价值不只是省下几块钱：**把假模型这条路修好，整个开发过程就不再依赖外部服务。** 第 12 章的 `fake_model.py` 和第 11 章的 `mock_data.js` 值得你在自己的项目里也留一份。

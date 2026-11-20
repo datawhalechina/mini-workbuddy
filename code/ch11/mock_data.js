@@ -1,4 +1,4 @@
-/* 第 12 章的演示数据：一份"假的事件流"
+/* 第 11 章的演示数据：一份"假的事件流"
  *
  * 为什么要有这个文件？
  *   前端的工作对象是事件，不是模型。只要有人按同样的格式吐事件，
@@ -30,7 +30,7 @@
     { t: "重构门户首页", m: 12 },
     { t: "分析招投标文件", m: 8 },
     { t: "写一份权限设计说明", m: 21 },
-    { t: "第 12 章前端联调", m: 6 },
+    { t: "第 11 章前端联调", m: 6 },
   ];
 
   function renderSide(title) {
@@ -118,14 +118,14 @@
   /* ---------------- 场景一：什么都不说 ---------------- */
 
   function sceneEmpty() {
-    renderSide("第 12 章前端联调");
+    renderSide("第 11 章前端联调");
     window.WB.renderTasks([]);
   }
 
   /* ---------------- 场景二：正在流式输出 ---------------- */
 
   function sceneStream() {
-    renderSide("第 12 章前端联调");
+    renderSide("第 11 章前端联调");
     userSays("事件流里 text_block_delta 和 thinking_block_delta 有什么区别？");
     tick(80);
     emit("REPLY_START", { role: "assistant" });
@@ -146,7 +146,7 @@
   /* ---------------- 场景三：工具执行中 ---------------- */
 
   function sceneTool() {
-    renderSide("第 12 章前端联调");
+    renderSide("第 11 章前端联调");
     userSays("assets 里的图现在一共多少张？");
     tick(60);
     emit("REPLY_START", { role: "assistant" });
@@ -160,9 +160,7 @@
       [
         "assets/ch07/permission-flow.png",
         "assets/ch07/hitl-sequence.png",
-        "assets/ch08/context-layers.png",
-        "assets/ch08/token-curve.png",
-        "assets/ch09/state-persist.png",
+        "assets/ch06/toolbase.png",
         "…（共 20 个文件）",
       ].join("\n"),
     );
@@ -178,7 +176,7 @@
   /* ---------------- 场景四：出错 ---------------- */
 
   function sceneError() {
-    renderSide("第 12 章前端联调");
+    renderSide("第 11 章前端联调");
     userSays("把 assets 里没用的图删掉。");
     tick(60);
     emit("REPLY_START", { role: "assistant" });
@@ -192,7 +190,7 @@
     toolResult(
       "c-9",
       "PermissionError: 当前权限模式（default）要求删除操作先确认，\n" +
-        "但本次会话没有接入确认通道（第 13 章补上）。",
+        "但本次会话没有接入确认通道（第 12 章补上）。",
       { ok: false },
     );
     usage(5340, 143);
@@ -209,7 +207,7 @@
   /* ---------------- 场景五：任务清单 ---------------- */
 
   function sceneTask() {
-    renderSide("第 12 章前端联调");
+    renderSide("第 11 章前端联调");
 
     window.WB.renderTasks([
       { subject: "写 style.css 三栏骨架", state: "completed" },
@@ -218,7 +216,7 @@
       { subject: "截图五张并插进正文", state: "pending" },
     ]);
 
-    userSays("把第 12 章的前端补完。");
+    userSays("把第 11 章的前端补完。");
     tick(60);
     emit("REPLY_START", { role: "assistant" });
 

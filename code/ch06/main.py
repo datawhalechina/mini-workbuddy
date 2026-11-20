@@ -3,7 +3,7 @@
 比上一章多了什么：
   1. 继承 ToolBase 写一个完整工具（能流式返回、能声明只读）
   2. 用 Pydantic 定义参数 schema
-  3. 工具组：让智能体运行时自己决定要不要启用
+  3. 把函数工具和类工具一起挂到 Agent 上
 """
 
 import asyncio
@@ -19,13 +19,7 @@ from agentscope.message import TextBlock, UserMsg
 from agentscope.model import OpenAIChatModel
 from agentscope.permission import PermissionBehavior, PermissionDecision
 from agentscope.state import AgentState
-from agentscope.tool import (
-    FunctionTool,
-    ToolBase,
-    ToolChunk,
-    ToolGroup,
-    Toolkit,
-)
+from agentscope.tool import FunctionTool, ToolBase, ToolChunk, Toolkit
 
 load_dotenv(override=True)
 
@@ -147,22 +141,15 @@ def word_frequency(text: str, top_n: int = 5) -> str:
 
 
 # ---------------------------------------------------------------------------
-# 四、装配：常驻工具和按需工具分开
+# 四、装配：函数工具和类工具放进同一个列表
 # ---------------------------------------------------------------------------
 
 
 def build_toolkit() -> Toolkit:
     return Toolkit(
         tools=[
-            FunctionTool(word_frequency),
-        ],
-        tool_groups=[
-            ToolGroup(
-                name="reporting",
-                description="报告生成相关工具。用户提到报告、提纲、周报时启用。",
-                instructions="生成的报告只是骨架，需要用户补充内容。",
-                tools=[ReportBuilder()],
-            ),
+            FunctionTool(word_frequency, is_read_only=True),
+            ReportBuilder(),
         ],
     )
 
@@ -195,7 +182,7 @@ async def main() -> None:
     toolkit = build_toolkit()
 
     print("=" * 70)
-    print("初始状态：只有 basic 组的工具可见")
+    print("当前挂上的工具")
     for schema in await toolkit.get_tool_schemas():
         fn = schema.get("function", schema)
         print("  ·", fn.get("name"))
@@ -206,8 +193,7 @@ async def main() -> None:
         name="Buddy",
         system_prompt=(
             "你叫 Buddy。遇到报告、提纲、周报这类请求时，"
-            "必须先调用 reset_tools 查看工具组、激活 reporting 组，"
-            "再用 build_report 生成骨架，不要自己手写提纲。短答即可。"
+            "用 build_report 生成骨架，不要自己手写提纲。短答即可。"
         ),
         model=build_model(),
         toolkit=toolkit,
@@ -222,7 +208,6 @@ async def main() -> None:
     print("这一轮模型实际做了什么（按时间顺序）")
     print_trace(agent.state)
     print("=" * 70)
-    print("最终激活的工具组：", agent.state.tool_context.activated_groups)
 
 
 if __name__ == "__main__":

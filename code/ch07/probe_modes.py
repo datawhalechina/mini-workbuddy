@@ -68,7 +68,7 @@ async def show_three_cases() -> None:
 
 
 async def show_mode_table() -> None:
-    """7.2 用。五种模式 × 三类命令。"""
+    """7.1 用。五种模式 × 三类命令。"""
     tool = Bash()
 
     print("--- 2. 五种模式 × 三类命令")
@@ -90,7 +90,7 @@ async def show_mode_table() -> None:
 
 
 async def show_rule_limits() -> None:
-    """7.6 用。两条规则实验，看 allow 能不能盖住安全拦截。"""
+    """7.2 用。两条规则实验，看 allow 能不能盖住安全拦截。"""
     tool = Bash()
 
     print("--- 3. 规则能不能盖住安全拦截")

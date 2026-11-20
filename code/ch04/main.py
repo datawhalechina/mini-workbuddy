@@ -7,7 +7,7 @@
 
 另外，两个工具函数直接从 bare_loop.py 里 import：
 同一个 get_current_time、同一份实现，两边的输出才有可比性。
-这份打印逻辑在第 12 章会被前端原样复用。
+这份打印逻辑在第 11 章会被前端原样复用。
 """
 
 import asyncio
