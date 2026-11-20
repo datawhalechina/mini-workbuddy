@@ -1,6 +1,6 @@
 # 第 4 章　解剖 ReAct 循环
 
-> 本章代码 `code/ch04/bare_loop.py`、`code/ch04/main.py`　·　读完约 20 分钟
+> 本章代码 `code/ch04/bare_loop.py`、`code/ch04/main.py`　·　读完约 30 分钟
 
 ## 4.0 上一章留下的问题
 
@@ -77,7 +77,7 @@ async def bare_loop(question: str, max_iters: int = 5) -> str:
 
 为了看清主干，上面删掉了部分注释和换行；完整文件在 `code/ch04/bare_loop.py`，加上工具定义和参数表一共 153 行，其中循环本体（`bare_loop` 这个函数）60 行。
 
-直接 `python bare_loop.py` 就能跑，它会打印每一轮模型返回了几个 `tool_calls`——这个数字就是机芯的节拍。
+`cd code/ch04 && python bare_loop.py` 就能跑，它会打印每一轮模型返回了几个 `tool_calls`——这个数字就是机芯的节拍。
 
 ```
 >>> 现在几点？顺便数一下这句话有多少字：手写循环其实不复杂。
@@ -90,15 +90,13 @@ async def bare_loop(question: str, max_iters: int = 5) -> str:
 
 两行 `[第 N 轮]`，就是循环转了两圈。第一圈模型要了两个工具，第二圈它不再要工具，`if not choice.tool_calls` 命中，`return` 结束。
 
-回到 4.0 的第一个问题，这一轮到底转几次。答案是圈数不固定，等于模型递申请单的次数加一，最后那一圈它是来交答案的。这个任务要了两个工具，但两个工具落在同一圈里，所以总共两圈。要是模型先查时间、看了结果再决定数字符，那就得三圈。
+回到 4.0 的第一个问题，这一轮到底转几次。答案是圈数不固定，等于模型递交申请单的轮数加一，最后那一圈它是来交答案的。这个任务要了两个工具，但两个工具落在同一圈里，所以总共两圈。要是模型先查时间、看了结果再决定数字符，那就得三圈。
 
 整个"智能"，就藏在这两圈里。听着挺玄，写完你大概会想，就这？
 
 > 模型最后那段话的措辞每次都会变，但 `[第 1 轮] tool_calls=2` → `[第 2 轮] tool_calls=0` 这个骨架不会变。看输出时盯骨架，别盯大模型说了啥。
 >
-> 骨架看清楚了，不过这段代码真正容易写错的地方，不在"转圈"本身，而在圈里的四件小事——凭什么停（4.1.1）、模型提出过的申请为什么要存回去（4.1.2）、工具结果怎么配对（4.1.3）、工具炸了怎么办（4.1.4）。
->
-> 那我们就继续出发吧~
+> 骨架看清楚了，不过这段代码真正容易写错的地方不在"转圈"本身，而在圈里的四件小事——凭什么停（4.1.1）、模型提出过的申请为什么要存回去（4.1.2）、工具结果怎么配对（4.1.3）、工具炸了怎么办（4.1.4）。
 
 ### 4.1.1 循环什么时候停
 
@@ -110,7 +108,7 @@ async def bare_loop(question: str, max_iters: int = 5) -> str:
 
 这条判断能成立，前提是模型愿意主动伸手要工具。它什么时候愿意？多半看工具描述写得清不清楚——描述到位，它一眼就能对上"这个问题该用哪个工具"，于是发起调用；描述含糊，它宁可凭记忆硬答，也不愿去调一个自己都看不懂的函数。这又回到第 3 章那个话题。
 
-不过这只是正常情况。还有三种情况会让循环停下，比如撞上 `max_iters`、用户中断、错误没接住直接把进程带崩。那时候循环也会退出，只是退出的方式不一样（4.5 节讲上限，第 12 章讲中断）。
+不过这只是正常情况。还有三种情况会让循环停下：撞上 `max_iters`、用户中断、错误没接住直接把进程带崩。那时候循环也会退出，只是退出的方式不一样（4.5 节讲上限，第 12 章讲中断）。
 
 还有个坑，藏得比较深。
 
@@ -172,16 +170,7 @@ messages.append({
 ]
 ```
 
-漏了那条 `assistant` 呢？它变成这样：
-
-```json
-[
-  {"role": "user", "content": "现在几点？"},
-  {"role": "tool", "tool_call_id": "call_abc", "content": "2026-10-30 15:57:21"}
-]
-```
-
-第二份记录里，那条 `tool` 消息在说"`call_abc` 这事儿办完了"，可整段历史里根本找不到 `call_abc` 这张单子。API 校验时就卡在这儿，直接返回 400，报错信息大概是 `messages with role 'tool' must be a response to a preceding message with 'tool_calls'`。
+漏了那条 `assistant` 呢？历史里就只剩一条 `user` 和一条 `tool`。那条 `tool` 消息在说"`call_abc` 这事儿办完了"，可整段历史里根本找不到 `call_abc` 这张单子。API 校验时就卡在这儿，直接返回 400，报错信息大概是 `messages with role 'tool' must be a response to a preceding message with 'tool_calls'`。
 
 这就是为什么申请单必须留着——它不只是给模型看的上下文，还是那条 `tool` 消息的"出身证明"。（`tool` 消息的写法下一小节细说，这里先看结构。）
 
@@ -260,7 +249,7 @@ except Exception as exc:
 
 **第一件是边界，也就是工具能不能做到。** `Read` 收到 `~/Desktop/工资条.xlsx` 会照读不误，`Write` 收到一个绝对路径会照写不误。它没有"我该待在哪"这个概念——路径对它就是个字符串，`open()` 传什么它开什么。
 
-这件事提示词解决不了。你在 `system_prompt` 里写十遍"不要访问工作区以外的文件"，它依然可能某次推理里顺手看一眼。不是因为它想造反，是因为它根本不知道边界在哪。这个坐标系对它不存在，它没法自检。更糟的是这股劲儿是写进工具描述里的，框架自带的 `Read` 第一句就是 `You can access any file directly by using this tool`，还要求参数必须是绝对路径——它压根没有"相对"这个概念，`chdir` 都管不着它。
+这件事提示词解决不了。你在 `system_prompt` 里写十遍"不要访问工作区以外的文件"，它依然可能某次推理里顺手看一眼。不是因为它想造反，是因为它根本不知道边界在哪。这个坐标系对它不存在，它没法自检。更糟的是，这种"不知道边界"是工具描述里就带进来的——框架自带的 `Read` 第一句就是 `You can access any file directly by using this tool`，还要求参数必须是绝对路径——它压根没有"相对"这个概念，`chdir` 都管不着它。
 
 工程上的正解叫**路径收敛**，工具拿到的每个路径都先拼回根目录再校验，落在根目录外面的直接拒。
 
@@ -343,21 +332,16 @@ async for event in agent.reply_stream(UserMsg(name="user", content=question)):
 | 宽限 | 撞上 `max_iters` | 注入 `HINT_BLOCK`，工具关掉或换成结构化输出工具，逼模型交结果 |
 | 退出 | 模型不再要工具，或收尾那轮也没交出结果 | `REPLY_END` |
 
-看到这儿，回头再看第 2 章那张事件表，很多名字就都有因果解释了。要是已经忘了那张表长什么样，这里再列一遍，省得来回翻。
+看到这儿，第 2 章那张事件表里的名字就都有因果解释了。跟循环直接相关的只有这四组：
 
 | 分组 | 事件 | 什么时候出现 |
 |---|---|---|
 | 一轮回复 | `REPLY_START` / `REPLY_END` | 整轮开始和结束，像一对括号 |
 | 调用模型 | `MODEL_CALL_START` / `MODEL_CALL_END` | 每次向模型发请求；一轮里可能调用多次 |
-| 文本 | `TEXT_BLOCK_START` / `_DELTA` / `_END` | 模型开始说话、逐字吐字、说完 |
-| 思考 | `THINKING_BLOCK_START` / `_DELTA` / `_END` | 同上，只是内容是推理过程 |
-| 工具调用 | `TOOL_CALL_START` / `_DELTA` / `_END` | 模型决定调工具，参数一点点拼出来 |
-| 工具结果 | `TOOL_RESULT_START` / `_DELTA` / `_END` | 工具执行，结果一点点回传 |
-| 提示 | `HINT_BLOCK` | 框架自己塞进去的提示 |
-| 人机交互 | `REQUIRE_USER_CONFIRM` / `USER_CONFIRM_RESULT` | 等用户点头（第 7 章） |
-| 异常 | `EXCEED_MAX_ITERS` | 迭代次数超限，被强制终止 |
+| 工具调用 | `TOOL_CALL_START` / `TOOL_CALL_DELTA` / `TOOL_CALL_END` | 模型决定调工具，参数一点点拼出来 |
+| 工具结果 | `TOOL_RESULT_START` / `TOOL_RESULT_TEXT_DELTA` / `TOOL_RESULT_DATA_DELTA` / `TOOL_RESULT_END` | 工具执行，结果一点点回传 |
 
-表里只留了跟循环有关的几组，完整 28 种还在第 2 章 2.4 节。
+文本、思考、数据、提示、人机交互、异常这些分组完整共 28 种，见 2.4 节。
 
 对着表看，`MODEL_CALL_START` 为什么会出现第二次、第三次，就说得通了——循环转了不止一圈，每转一圈就要问一次模型。同理，`TOOL_CALL_START` 之所以能连着出现两三次，是因为模型一次就递了两三张申请单，工具那边得一张一张接着办。
 
@@ -411,7 +395,7 @@ async def run_with_trace(agent: Agent, question: str) -> None:
 
 上面为了看清主干，一共省掉了三处。`payload()` 是一处；另外两处一是累计 `MODEL_CALL_START` / `TOOL_CALL_START` 的个数和 token、用来打最后那行汇总，二是把 `TEXT_BLOCK_DELTA` 攒起来、到 `MODEL_CALL_END` 时整段印出模型这一轮说的话。完整版都在 `code/ch04/main.py`，跑起来就能看到它们的效果。
 
-直接 `python main.py`，实测输出：
+`cd code/ch04 && python main.py`，实测输出：
 
 ```
 >>> 你：现在几点？顺便数一下这句话有多少字：手写循环其实不复杂。
@@ -427,7 +411,7 @@ async def run_with_trace(agent: Agent, question: str) -> None:
     3715ms    MODEL_CALL_END         in=524 out=141
 
 - 现在：2026-10-30 07:57 UTC（星期五；工具返回的本地时间为 15:57）
-- 「手写循环其实不复杂。」：共 10 个字符，其中中文 9 个字（含句号）
+- "手写循环其实不复杂。"：共 10 个字符，其中中文 9 个字（含句号）
 
     3715ms  REPLY_END              completed
 ------------------------------------------------------------------------
@@ -450,8 +434,6 @@ async def run_with_trace(agent: Agent, question: str) -> None:
 
 最后一行 `REPLY_END` 后面跟着 `completed`，说明这轮是真走完了。这个字段换了值就有事，`exceed_max_iters` 是转晕了被拦住，`error` 是中间某步炸了，`interrupted` 是用户按了停止。前端照着它给不同的说法，用户才不至于对着一个转圈动画干等。
 
-前面说过这个打印器其实就是第 11 章前端的原型。前端干的事，无非是把这张时间线挪到网页上，`MODEL_CALL_START` 显示成正在输入，`TOOL_CALL_START` 变成一张工具卡片，`TEXT_BLOCK_DELTA` 接着一个字一个字往外蹦。
-
 ## 4.5 控制循环：`ReActConfig`
 
 手写版里圈数是你自己数的，`for i in range(max_iters)` 写几就转几。现在这个数字挪到了配置对象上，`ReActConfig(max_iters=10)` 的第一个参数管的还是同一件事。
@@ -463,7 +445,7 @@ from agentscope.agent import ReActConfig
 
 react_config = ReActConfig(
     max_iters=10,                        # 最多转 10 轮
-    structured_output_grace_iters=5,     # 结构化输出的宽限轮数，默认也是 5
+    structured_output_grace_iters=5,     # 结构化输出的宽限轮数，默认也是 5（见下表）
 )
 ```
 
@@ -483,15 +465,13 @@ react_config = ReActConfig(
 
 > **撞上 `max_iters` 之后会发生什么**
 >
-> 不会立刻停。`cur_iter` 走到 10 那一步，框架先给你一次收尾的机会。它往对话里塞一条 `<system-reminder>`，大意是"轮数用完了，把已经查到的整理成文字交出来，别再调工具"，同时把 `tool_choice` 设成 `"none"`，工具全关。这一次调用是硬的，只给一次。
+> 不会立刻停。框架先塞一条 `<system-reminder>` 要它把已查到的内容整理成文字交出来，同时把 `tool_choice` 设成 `"none"`、工具全关——这就是 4.2 说的"再催一次"。这次调用也算轮数，跑完 `cur_iter` 就从 10 变成 11。
 >
-> 但要留意，这一次也算轮数。它跑完，`cur_iter` 就从 10 变成 11。
+> 如果给 agent 设了 `structured_schema`，宽限就不是一次，而是上表里的 `structured_output_grace_iters` 轮：这几轮工具不关，改用专门产出结构化结果的工具。
 >
-> 如果你的任务要的是结构化输出，也就是给 agent 设了 `structured_schema`，那情况不一样。多给的就不是一次，而是 `structured_output_grace_iters` 那么多轮，默认 5。这几轮里工具不关，而是换成那个专门产出结构化结果的工具，逼模型按格式交。
+> 连收尾也没交出文字，才真收场：发 `EXCEED_MAX_ITERS`，`finished_reason` 记成 `exceed_max_iters`。这个事件在 2.x 已标 deprecated，别拿它当主信号。
 >
-> 收尾那次也没交出文字，比如它还在要工具，这才真收场。此时发出 `EXCEED_MAX_ITERS` 事件，`finished_reason` 记成 `exceed_max_iters`。这个事件在 2.x 里已经标了 deprecated，只为了兼容老代码才留着，别拿它当主信号。
->
-> 还有个坑得单独说。只要那次收尾调用跑过，`cur_iter` 就大于 `max_iters`，走文字收尾这条路时 `finished_reason` 会记成 `exceed_max_iters`，哪怕模型已经把整段答复写完了。换句话说，这个字段只回答"轮数用超没有"，不回答"东西交出来没有"。想知道后者，去看 `get_text_content()` 返回的内容是不是空的。
+> 还有个坑：只要收尾调用跑过，`cur_iter` 就大于 `max_iters`，此时哪怕模型已经把整段答复写完，`finished_reason` 仍记成 `exceed_max_iters`。它只回答"轮数用超没有"，不回答"东西交出来没有"——想知道后者，看 `get_text_content()` 是不是空的。
 
 ## 4.6 三个常见错误
 
