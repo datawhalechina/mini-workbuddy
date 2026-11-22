@@ -37,7 +37,7 @@ def main() -> None:
             ToolCallBlock(
                 id="call_1",
                 name="Read",
-                input='{"path": "config.yaml"}',
+                input='{"file_path": "config.yaml"}',
                 state="finished",
             ),
             # ③ 工具返回了什么（这一步最容易被字符串化丢掉）
