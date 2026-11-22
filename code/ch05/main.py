@@ -87,7 +87,7 @@ async def main() -> None:
             ),
             model=build_model(),
             toolkit=Toolkit(tools=tools),
-            offloader=workspace,  # 上下文被压缩时，原文卸载到这里
+            offloader=workspace,  # 上下文装不下时，原文卸载到这里
         )
 
         # 命令行脚本没有确认界面，工作区的写操作默认会停下来等人点头。
