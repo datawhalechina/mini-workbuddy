@@ -115,9 +115,9 @@ async def main() -> None:
     # 先整体放行，把注意力放在"工具能不能用起来"；第 7 章专门讲怎么管住它。
     agent.state.permission_context.mode = PermissionMode.BYPASS
 
-    # 让 shell 里的 python 一定是当前这个解释器。
-    # 别把绝对路径拼进命令里：Windows 路径带反斜杠，进 bash 会被当转义符；
-    # 加了引号又会被当成一个整体的命令名，照样找不到。
+    # 让 shell 里的 python 一定是当前这个解释器（PATH 里的 python 未必是它）。
+    # 也别把绝对路径拼进命令里：路径含空格就得加引号，而引号经 shell 转发后
+    # 常被当成命令名的一部分；不加引号，空格又会把命令拆成两段。
     os.environ["PATH"] = os.path.dirname(sys.executable) + os.pathsep + os.environ.get("PATH", "")
 
     questions = [
