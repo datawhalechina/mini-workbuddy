@@ -41,7 +41,6 @@ from agentscope.message import ToolCallBlock                      # noqa: E402
 from agentscope.model import OpenAIChatModel                      # noqa: E402
 from agentscope.permission import (                               # noqa: E402
     PermissionBehavior,
-    PermissionEngine,
     PermissionMode,
     PermissionRule,
 )
@@ -239,14 +238,17 @@ async def confirm(body: ConfirmRequest) -> dict[str, Any]:
 
     rules: list[PermissionRule] = []
     if body.decision == "always":
-        rule = PermissionRule(
-            tool_name=target.name,
-            rule_content="",                    # 空字符串 = 匹配这个工具的所有调用
-            behavior=PermissionBehavior.ALLOW,
-            source="user",
+        # 只装进回执，不自己写 permission_context：
+        # 框架处理 ConfirmResult 时会拿 rules 里的每一条去 add_rule，
+        # 两边都写一遍，规则会重复入库。
+        rules.append(
+            PermissionRule(
+                tool_name=target.name,
+                rule_content="",                # 空字符串 = 匹配这个工具的所有调用
+                behavior=PermissionBehavior.ALLOW,
+                source="user",
+            )
         )
-        PermissionEngine(session.agent.state.permission_context).add_rule(rule)
-        rules.append(rule)
 
     result = ConfirmResult(
         confirmed=body.decision != "deny",

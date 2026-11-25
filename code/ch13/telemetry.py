@@ -56,11 +56,17 @@ class UsageLog:
         with self.path.open("a", encoding="utf-8") as fp:
             fp.write(json.dumps(record, ensure_ascii=False) + "\n")
 
-    def read(self, limit: int = 500) -> list[dict[str, Any]]:
+    def read(self, limit: int | None = 500) -> list[dict[str, Any]]:
+        """读最近的若干行，limit=None 表示全读。
+
+        明细接口传 200 就够了，汇总要的是全量账，别让它被同一个默认值截断。
+        """
         if not self.path.exists():
             return []
         with self.path.open("r", encoding="utf-8") as fp:
-            lines = fp.readlines()[-limit:]
+            lines = fp.readlines()
+        if limit is not None:
+            lines = lines[-limit:]
         rows = []
         for line in lines:
             line = line.strip()
@@ -73,9 +79,12 @@ class UsageLog:
         return rows
 
     def summary(self, session_id: str | None = None) -> dict[str, Any]:
-        """按会话汇总。不传 session_id 就是全局。"""
+        """按会话汇总。不传 session_id 就是全局。
+
+        这里要的是完整账目，所以 read(None) 全读；明细接口才用默认的尾部若干行。
+        """
         rows = [
-            r for r in self.read()
+            r for r in self.read(None)
             if session_id is None or r.get("session_id") == session_id
         ]
         models = [r for r in rows if r.get("kind") == "model_call"]

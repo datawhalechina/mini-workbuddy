@@ -17,7 +17,8 @@
 
 默认走假模型（MOCK=1），不需要 API key。要对着真模型跑：
     OPENAI_API_KEY=... OPENAI_BASE_URL=... OPENAI_MODEL=... python checkup.py --real
-真模型下第 2、3、4 项的触发词不可靠，脚本会如实标注"跳过"。
+真模型不一定照着脚本的预想走（比如先 ask_user 问一句再写文件），
+第 2、3 项用 drive_to() 把中间的提问答掉；要是连 Write 都没出现，会如实断言失败。
 """
 
 import asyncio
