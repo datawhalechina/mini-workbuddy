@@ -259,4 +259,3 @@ python -c "from agentscope.event import ToolCallStartEvent as E; print(E.model_f
 | 假模型 | `MOCK=1 python main.py` | 否 | 调后端、调事件流、跑自检 |
 | 真模型 | 填好 `.env` 后 `python main.py` | 是 | 实际使用 |
 
-第三种模式用的是 OpenAI 兼容端点上的 `deepseek-v4.1-flash`，实测下来一轮普通问答约 0.3 到 20 秒（思考型模型波动大），自检脚本六项全过。前两种模式也保留着——它们的价值不只是省下几块钱：**把假模型这条路修好，整个开发过程就不再依赖外部服务。** 第 12 章的 `fake_model.py` 和第 11 章的 `mock_data.js` 值得你在自己的项目里也留一份。

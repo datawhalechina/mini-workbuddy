@@ -20,7 +20,7 @@ features:
   - title: 按产品讲，不按 API 讲
     details: 每加一块能力，先回答「为什么现在需要它」。概念在真正被用到的那一刻出场，而不是照着文档目录罗列一遍。
   - title: 14 章全部可运行
-    details: 第 1–9 章每章一个单文件，python main.py 直接跑；第 10 章起前后端一起跑，每章代码独立可 diff。
+    details: 第 1–9 章每章都有单文件入口，python main.py 直接跑；第 10 章起前后端一起跑，每章代码独立可 diff。
   - title: 踩过的坑都写进去了
     details: 上下文撑爆、会话恢复残留、SSE 断线重连、EventSource 自杀式重连——这些不是理论，是实跑出来的。
 ---

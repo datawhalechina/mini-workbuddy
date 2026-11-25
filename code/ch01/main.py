@@ -27,7 +27,7 @@ load_dotenv(override=True)
 # 配置：全部从环境变量读，别写死在代码里。换模型只改 .env，代码一行不动。
 API_KEY = os.getenv("OPENAI_API_KEY", "")  # 密钥；第二个参数是取不到时的默认值
 BASE_URL = os.getenv("OPENAI_BASE_URL", "")  # 留空则走 OpenAI 官方地址
-MODEL_NAME = os.getenv("OPENAI_MODEL", "")  # 模型名，缺省 gpt-4o-mini
+MODEL_NAME = os.getenv("OPENAI_MODEL", "")  # 模型名，必须自己在 .env 里配，没有默认值
 
 PROMPT = "> "  # 输入提示符
 # 一组退出指令，大小写不敏感（比较时统一转小写）
